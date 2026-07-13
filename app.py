@@ -103,15 +103,14 @@ if len(owned) == 0:
     st.warning("Δεν υπάρχουν δεδομένα για τα επιλεγμένα φίλτρα. Δοκίμασε να επιλέξεις τουλάχιστον μία διοργάνωση/κανάλι.")
     st.stop()
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Δημοσιεύσεις (δικές μας)", f"{len(owned):,}")
 c2.metric("Συνολικές προβολές (views)", f"{int(owned['views'].sum()):,}")
-c3.metric("Σύνολο engagement", f"{int(owned['engagement'].sum()):,}")
+c3.metric("Αλληλεπιδράσεις", f"{int(owned['engagement'].sum()):,}")
 avg_er = owned.loc[owned["reach"] > 0, "engagement_rate"].mean()
 c4.metric("Μέσο engagement rate", f"{avg_er:.1%}" if pd.notna(avg_er) else "—")
-c5.metric("Αναφορές από τρίτους (earned)", f"{len(earned):,}")
 st.caption(
-    "Το engagement rate υπολογίζεται ως engagement/απήχηση ανά μεμονωμένη δημοσίευση και μετά "
+    "Το engagement rate υπολογίζεται ως αλληλεπιδράσεις/απήχηση ανά μεμονωμένη δημοσίευση και μετά "
     "παίρνεται ο μέσος όρος — αυτό είναι έγκυρο (δεν αθροίζει reach), σε αντίθεση με ένα «σύνολο απήχησης»."
 )
 
@@ -143,7 +142,10 @@ phase_summary = (
 pc1, pc2, pc3 = st.columns(3)
 for col, phase in zip([pc1, pc2, pc3], phase_summary.index):
     row = phase_summary.loc[phase]
-    col.metric(phase, f"{int(row['sum']):,} views", f"{int(row['count'])} posts · μ.ό. {int(row['mean']):,}")
+    if pd.isna(row["count"]) or row["count"] == 0:
+        col.metric(phase, "—", "0 posts στο επιλεγμένο εύρος")
+    else:
+        col.metric(phase, f"{int(row['sum']):,} views", f"{int(row['count'])} posts · μ.ό. {int(row['mean']):,}")
 
 st.markdown("---")
 
@@ -175,7 +177,7 @@ yoy_display = yoy.drop(columns=["edition_sort"]).copy()
 yoy_display["avg_engagement_rate"] = (yoy_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
 for c in ["total_views", "total_engagement"]:
     yoy_display[c] = yoy_display[c].astype(int)
-yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο προβολών", "Σύνολο engagement", "Μέσο engagement rate"]
+yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο προβολών", "Αλληλεπιδράσεις", "Μέσο engagement rate"]
 st.dataframe(yoy_display, width='stretch', hide_index=True)
 
 st.markdown("---")
@@ -224,7 +226,7 @@ for c in ["total_views", "total_engagement", "likes", "shares", "comments"]:
     detail_display[c] = detail_display[c].astype(int)
 detail_display.columns = [
     "Κανάλι", "Δημοσιεύσεις", "Σύνολο views", "Μέσο views",
-    "Median views", "Σύνολο engagement", "Μέσο engagement rate",
+    "Median views", "Αλληλεπιδράσεις", "Μέσο engagement rate",
     "Likes", "Shares", "Comments",
 ]
 st.dataframe(detail_display, width='stretch', hide_index=True)
@@ -605,7 +607,7 @@ if SHOW_STRATEGIC_INSIGHTS:
     pre_sum = phase_summary.loc["Πριν το Φεστιβάλ", "sum"]
     during_sum = phase_summary.loc["Κατά το Φεστιβάλ", "sum"]
     post_sum = phase_summary.loc["Μετά το Φεστιβάλ", "sum"]
-    if pre_sum and during_sum:
+    if pd.notna(pre_sum) and pd.notna(during_sum) and pre_sum and during_sum:
         ratio = during_sum / pre_sum
         insights.append(
             f"Οι προβολές κατά τη διάρκεια του φεστιβάλ ήταν **{ratio:.1f}×** περισσότερες σε σχέση με "
@@ -613,7 +615,7 @@ if SHOW_STRATEGIC_INSIGHTS:
             f"σημαίνει επίσης ότι η pre-event περίοδος (~{pre_sum:,.0f} views σε σύνολο) χρειάζεται "
             "πιο στοχευμένο, όχι απλώς πιο συχνό, περιεχόμενο."
         )
-    if post_sum and during_sum:
+    if pd.notna(post_sum) and pd.notna(during_sum) and post_sum and during_sum:
         drop = 1 - (post_sum / during_sum)
         insights.append(
             f"Μετά τη λήξη του φεστιβάλ οι προβολές μειώθηκαν κατά **{drop:.0%}** — "
