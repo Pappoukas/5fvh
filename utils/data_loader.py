@@ -1,60 +1,37 @@
-# utils/data_loader.py (προσθήκες στο τέλος του αρχείου)
+"""
+Data loader & cleaner για τα απολογιστικά εξαγωγής του Meta Business Suite
+(Instagram Stories, Facebook Posts, Instagram Feed) του Φεστιβάλ Βιβλίου Χανίων.
 
-# Λίστα γνωστών ομιλητών/συγγραφέων (μπορεί να εμπλουτιστεί από το πρόγραμμα)
-SPEAKERS = [
-    "Orhan Pamuk", "Maurice Attia", "Jonathan Coe", "Leonardo Padura",
-    "Hari Kunzru", "Niall Williams", "Katie Kitamura", "Alan Hollinghurst",
-    "Caryl Ferey", "Vincenzo Latronico", "Eric Chacour", "Eric Mukendi",
-    "Didier Aubourg", "Martin Glaz Serup", "Laura Cwiertnia", "Rodrigo Rey Rosa",
-    "Alejandro Palomas", "Abi Daré", "Julianne Pachico", "Richard Gwyn",
-    "Ghayath Almadhoun", "Eusebi Ayensa", "Dominic Amerena", "Meryem El Mehdati",
-    "Στέφανος Τραχανάς", "Τίτος Πατρίκιος", "Παναγιώτης Σημανδηράκης",
-    "Μανώλης Πιμπλής", "Κυριακή Μπεϊόγλου", "Παυλίνα Μάρβιν",
-    "Φωτεινή Τσαλίκογλου", "Έρση Σωτηροπούλου", "Γιάννης Μακριδάκης",
-    "Έλενα Μαρούτσου", "Μαρία Α. Ιωάννου", "Κυριάκος Χαρίτος",
-    "Νίκος Δαββέτας", "Τάσος Σακελλαρόπουλος", "Μικέλα Χαρτουλάρη",
-    "Αλεξάνδρα Χαΐνη", "Γιάννης Πανταζόπουλος", "Σταύρος Θεοδωράκης",
-    "Παύλος Τσίμας", "Ξένια Κουναλάκη", "Πάνος Χαρίτος", "Πέτρος Κατσάκος",
-    "Λένα Διβάνη", "Αργυρώ Μαντόγλου", "Ελένη Γιαννακάκη", "Σωτήρης Ρούσσος",
-    "Χλόη Μπάλλα", "Κωνσταντίνος Πουλής", "Ιωσήφ Αλυγιζάκης",
-    "Χρήστος Χωμενίδης", "Γιώργος Συμπάρδης", "Θράσος Καμινάκης",
-    "Απόστολος Δοξιάδης", "Βασίλης Γκουρογιάννης", "Πολύνα Μπανά",
-    "Ευάρεστος Πιμπλής", "Μαρία Λούκα", "Γιάννης Παλαβός",
-    "Νάντια Αργυροπούλου", "Φραγκίσκη Αμπατζοπούλου"
-]
+Ενοποιεί τα 3 heterogeneous exports σε ένα κοινό, καθαρό schema έτοιμο
+για ανάλυση & οπτικοποίηση.
+"""
 
-# Λέξεις-κλειδιά για κατηγοριοποίηση περιεχομένου
-CONTENT_CATEGORIES = {
-    "Συζήτηση": ["συζήτηση", "διάλογος", "συνομιλία", "πάνελ", "συζητούν", "συνομιλούν"],
-    "Παρουσίαση βιβλίου": ["παρουσίαση", "βιβλίο", "έκδοση", "κυκλοφορεί", "νέο βιβλίο", "τίτλο"],
-    "Συνέντευξη": ["συνέντευξη", "μιλάει", "ακούστε", "συνέντευξη"],
-    "Εργαστήριο": ["εργαστήριο", "masterclass", "βιωματικό", "workshop"],
-    "Μουσική/Παράσταση": ["μουσική", "τραγούδι", "παράσταση", "αφήγηση", "συναυλία"],
-    "Έκθεση": ["έκθεση", "εικαστική", "εγκαίνια", "ζωγράφος", "φωτογραφία"],
-    "Ανακοίνωση": ["ανακοίνωση", "πρόγραμμα", "συνέντευξη τύπου", "απολογισμός"],
-    "Στιγμιότυπο": ["στιγμιότυπο", "φωτογραφίες", "video highlights", "reel"]
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+# Το επίσημο account/page του Φεστιβάλ - ό,τι άλλο account εμφανίζεται
+# στα exports είναι "earned media" (αναφορές / συνεργασίες, όχι δικές μας δημοσιεύσεις)
+OWNED_ACCOUNT_NAMES = {
+    "Chania Book Festival",
+    "Φεστιβάλ Βιβλίου Χανίων - Chania Book Festival",
 }
 
-
-def _extract_speakers(text: str) -> list:
-    """Επιστρέφει τα ονόματα ομιλητών που βρίσκονται στο κείμενο."""
-    found = []
-    for name in SPEAKERS:
-        if name.lower() in text.lower():
-            found.append(name)
-    return found
+FESTIVAL_START = pd.Timestamp("2026-06-22")
+FESTIVAL_END = pd.Timestamp("2026-06-28 23:59:59")
 
 
-def _categorize_content(text: str) -> str:
-    """Επιστρέφει την κατηγορία περιεχομένου με βάση λέξεις-κλειδιά."""
-    text_lower = text.lower()
-    for cat, keywords in CONTENT_CATEGORIES.items():
-        if any(kw in text_lower for kw in keywords):
-            return cat
-    return "Άλλο"
+def _phase(dt: pd.Timestamp) -> str:
+    if pd.isna(dt):
+        return "Άγνωστο"
+    if dt < FESTIVAL_START:
+        return "Πριν το Φεστιβάλ"
+    if dt <= FESTIVAL_END:
+        return "Κατά το Φεστιβάλ"
+    return "Μετά το Φεστιβάλ"
 
-
-# Τροποποιημένες συναρτήσεις load_* για να περιλαμβάνουν επιπλέον στήλες
 
 def load_instagram_stories() -> pd.DataFrame:
     df = pd.read_csv(DATA_DIR / "instagram_stories.csv")
@@ -70,16 +47,15 @@ def load_instagram_stories() -> pd.DataFrame:
         "reach": df["Απήχηση"].fillna(0),
         "likes": df["Μου αρέσει!"].fillna(0),
         "shares": df["Κοινοποιήσεις"].fillna(0),
-        "comments": 0,  # no direct comments on stories
+        "comments": 0,
         "link": df["Μόνιμος σύνδεσμος"],
         "is_owned": True,
-        # Extra story metrics
-        "link_clicks": df["Κλικ σε σύνδεσμο"].fillna(0),
-        "profile_visits": df["Επισκέψεις στο προφίλ"].fillna(0),
-        "replies": df["Απαντήσεις"].fillna(0),
-        "sticker_taps": df["Πατήματα σε αυτοκόλλητο"].fillna(0),
-        "hides": 0,
-        "hides_all": 0,
+        "story_replies": df["Απαντήσεις"].fillna(0),
+        "story_navigation": df["Πλοήγηση"].fillna(0),
+        "story_sticker_taps": df["Πατήματα σε αυτοκόλλητο"].fillna(0),
+        "story_profile_visits": df["Επισκέψεις στο προφίλ"].fillna(0),
+        "story_link_clicks": df["Κλικ σε σύνδεσμο"].fillna(0),
+        "story_new_follows": df["Πόσοι ακολουθούν"].fillna(0),
     })
     return out
 
@@ -107,14 +83,8 @@ def load_facebook_posts() -> pd.DataFrame:
         "comments": df["Σχόλια"].fillna(0),
         "link": df["Μόνιμος σύνδεσμος"],
         "is_owned": df["Όνομα σελίδας"].isin(OWNED_ACCOUNT_NAMES),
-        # Facebook negative feedback
-        "hides": df["Αρνητικά σχόλια από χρήστες: Απόκρυψη"].fillna(0),
-        "hides_all": df["Αρνητικά σχόλια από χρήστες: Απόκρυψη όλων"].fillna(0),
-        # Extra (fill with 0 for stories compatibility)
-        "link_clicks": 0,
-        "profile_visits": 0,
-        "replies": 0,
-        "sticker_taps": 0,
+        "fb_hide_all": df["Αρνητικά σχόλια από χρήστες: Απόκρυψη όλων"].fillna(0),
+        "fb_hide": df["Αρνητικά σχόλια από χρήστες: Απόκρυψη"].fillna(0),
     })
     return out
 
@@ -140,22 +110,17 @@ def load_instagram_feed() -> pd.DataFrame:
         "comments": df["Σχόλια"].fillna(0),
         "link": df["Μόνιμος σύνδεσμος"],
         "is_owned": df["Όνομα λογαριασμού"].isin(OWNED_ACCOUNT_NAMES),
-        "link_clicks": 0,
-        "profile_visits": 0,
-        "replies": 0,
-        "sticker_taps": 0,
-        "hides": 0,
-        "hides_all": 0,
     })
     return out
 
 
 def load_all() -> pd.DataFrame:
-    """Επιστρέφει ενοποιημένο DataFrame με επιπλέον υπολογισμένες στήλες."""
+    """Επιστρέφει ένα ενοποιημένο DataFrame με όλες τις δημοσιεύσεις
+    (δικές μας + earned media) και από τα 3 κανάλια."""
     frames = [load_instagram_stories(), load_facebook_posts(), load_instagram_feed()]
     df = pd.concat(frames, ignore_index=True)
     df = df.dropna(subset=["dt"])
-    for col in ["views", "reach", "likes", "shares", "comments", "link_clicks", "profile_visits", "replies", "sticker_taps", "hides", "hides_all"]:
+    for col in ["views", "reach", "likes", "shares", "comments"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["engagement"] = df["likes"] + df["shares"] + df["comments"]
     df["engagement_rate"] = np.where(df["reach"] > 0, df["engagement"] / df["reach"], np.nan)
@@ -164,9 +129,4 @@ def load_all() -> pd.DataFrame:
     df["hour"] = df["dt"].dt.hour
     df["week"] = df["dt"].dt.isocalendar().week
     df["date"] = df["dt"].dt.date
-
-    # Εξαγωγή ομιλητών και κατηγορία περιεχομένου (μόνο για owned posts)
-    df["speakers"] = df.apply(lambda row: _extract_speakers(row["text"]) if row["is_owned"] else [], axis=1)
-    df["content_category"] = df.apply(lambda row: _categorize_content(row["text"]) if row["is_owned"] else "Άλλο", axis=1)
-
     return df.sort_values("dt").reset_index(drop=True)
