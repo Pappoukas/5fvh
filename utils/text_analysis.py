@@ -161,3 +161,39 @@ def add_category_column(df: pd.DataFrame, text_col: str = "text") -> pd.DataFram
     df = df.copy()
     df["category"] = df[text_col].fillna("").apply(categorize)
     return df
+
+
+# --------------------------------------------------------------------- #
+# Hashtags
+# --------------------------------------------------------------------- #
+
+_HASHTAG_PATTERN = re.compile(r"#(\w+)", re.UNICODE)
+
+# Το σταθερό branded hashtag εμφανίζεται σχεδόν παντού — εξαιρείται από τη
+# σύγκριση απόδοσης ώστε να αναδειχθούν τα υπόλοιπα, πιο "θεματικά" hashtags.
+BRAND_HASHTAGS = {"chaniabookfestival", "φεστιβάλβιβλίουχανίων", "cbf"}
+
+
+def extract_hashtags(text: str) -> list[str]:
+    if not text:
+        return []
+    return [h.lower() for h in _HASHTAG_PATTERN.findall(text)]
+
+
+def build_hashtag_table(df: pd.DataFrame, text_col: str = "text",
+                         reach_col: str = "reach", exclude_brand: bool = True) -> pd.DataFrame:
+    """Επιστρέφει DataFrame: hashtag, posts, total_reach, avg_reach."""
+    rows = []
+    for _, row in df.iterrows():
+        tags = set(extract_hashtags(row[text_col]))
+        if exclude_brand:
+            tags -= BRAND_HASHTAGS
+        for tag in tags:
+            rows.append((tag, row[reach_col]))
+    if not rows:
+        return pd.DataFrame(columns=["hashtag", "posts", "total_reach", "avg_reach"])
+    tmp = pd.DataFrame(rows, columns=["hashtag", "reach"])
+    out = tmp.groupby("hashtag").agg(
+        posts=("reach", "count"), total_reach=("reach", "sum"), avg_reach=("reach", "mean")
+    ).reset_index().sort_values("total_reach", ascending=False)
+    return out
