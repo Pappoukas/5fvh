@@ -14,8 +14,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 
-from utils.data_loader import load_all, FESTIVAL_START, FESTIVAL_END
-from utils.text_analysis import word_frequencies, build_names_table, add_category_column
+from utils.data_loader import load_all, FESTIVAL_DATES, EDITION_LABELS
+from utils.text_analysis import (
+    word_frequencies, build_names_table, add_category_column, build_hashtag_table,
+)
 
 GREEK_FONT_PATH = os.path.join(matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans.ttf")
 
@@ -40,6 +42,11 @@ df = get_data()
 # ------------------------------------------------------------- SIDEBAR ----
 st.sidebar.title("📖 Φίλτρα")
 
+editions = st.sidebar.multiselect(
+    "Διοργάνωση",
+    sorted(df["edition"].unique(), key=lambda e: str(e)),
+    default=sorted(df["edition"].unique(), key=lambda e: str(e)),
+)
 channels = st.sidebar.multiselect(
     "Κανάλι", sorted(df["channel"].unique()), default=sorted(df["channel"].unique())
 )
@@ -53,7 +60,7 @@ date_range = st.sidebar.date_input(
     "Εύρος ημερομηνιών", value=(date_min, date_max), min_value=date_min, max_value=date_max
 )
 
-fdf = df[df["channel"].isin(channels)]
+fdf = df[df["channel"].isin(channels) & df["edition"].isin(editions)]
 if own_filter == "Μόνο δικές μας":
     fdf = fdf[fdf["is_owned"]]
 elif own_filter == "Μόνο earned media / αναφορές":
@@ -64,17 +71,26 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
 st.sidebar.markdown("---")
 st.sidebar.caption(
     "Δεδομένα: εξαγωγές Meta Business Suite, "
-    f"{date_min.strftime('%d/%m/%Y')} – {date_max.strftime('%d/%m/%Y')}.\n\n"
-    "Φεστιβάλ: 22–28 Ιουνίου 2026."
+    f"{date_min.strftime('%d/%m/%Y')} – {date_max.strftime('%d/%m/%Y')}, "
+    "3 διοργανώσεις (2024–2026).\n\n"
+    "⚠️ Τα δεδομένα απήχησης του 2024 είναι εν μέρει ελλιπή στην πηγή τους "
+    "(ιδίως για τα Stories) — σύγκρινε με προσοχή."
 )
 
 # --------------------------------------------------------------- TITLE ----
-st.title("📖 5ο Φεστιβάλ Βιβλίου Χανίων — Social Media Analytics")
-st.caption("Insights για τη στρατηγική επικοινωνίας & τις μελλοντικές αποφάσεις της ομάδας")
+st.title("📖 Φεστιβάλ Βιβλίου Χανίων — Social Media Analytics")
+st.caption(
+    "Insights για τη στρατηγική επικοινωνίας & τις μελλοντικές αποφάσεις της ομάδας — "
+    "3ο (2024), 4ο (2025) & 5ο (2026) Φεστιβάλ"
+)
 
 # ----------------------------------------------------------------- KPIs ---
 owned = fdf[fdf["is_owned"]]
 earned = fdf[~fdf["is_owned"]]
+
+if len(owned) == 0:
+    st.warning("Δεν υπάρχουν δεδομένα για τα επιλεγμένα φίλτρα. Δοκίμασε να επιλέξεις τουλάχιστον μία διοργάνωση/κανάλι.")
+    st.stop()
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Δημοσιεύσεις (δικές μας)", f"{len(owned):,}")
@@ -94,11 +110,14 @@ weekly = (
     .reset_index()
 )
 fig = px.area(weekly, x="dt", y="reach", labels={"dt": "Εβδομάδα", "reach": "Απήχηση"})
-fig.add_vrect(
-    x0=FESTIVAL_START, x1=FESTIVAL_END,
-    fillcolor="orange", opacity=0.15, line_width=0,
-    annotation_text="Διάρκεια Φεστιβάλ", annotation_position="top left",
-)
+for yr in sorted(owned["year"].dropna().unique()):
+    if yr in FESTIVAL_DATES:
+        start, end = FESTIVAL_DATES[yr]
+        fig.add_vrect(
+            x0=start, x1=end,
+            fillcolor="orange", opacity=0.15, line_width=0,
+            annotation_text=EDITION_LABELS.get(yr, str(yr)), annotation_position="top left",
+        )
 st.plotly_chart(fig, width='stretch')
 
 phase_summary = (
@@ -110,6 +129,43 @@ pc1, pc2, pc3 = st.columns(3)
 for col, phase in zip([pc1, pc2, pc3], phase_summary.index):
     row = phase_summary.loc[phase]
     col.metric(phase, f"{int(row['sum']):,} reach", f"{int(row['count'])} posts · μ.ό. {int(row['mean']):,}")
+
+st.markdown("---")
+
+# --------------------------------------------------- YEAR-OVER-YEAR -----
+st.subheader("📅 Σύγκριση διοργανώσεων (Year-over-Year)")
+st.caption(
+    "⚠️ Το 2024 έχει εν μέρει ελλιπή δεδομένα απήχησης στην πηγή (Meta export) — "
+    "ειδικά τα Instagram Stories του 2024 δείχνουν μη ρεαλιστικά χαμηλή απήχηση. "
+    "Για το 2024 δες παράλληλα και τη στήλη «Views» που είναι πληρέστερη."
+)
+yoy = owned.groupby("edition").agg(
+    posts=("id", "count"),
+    total_reach=("reach", "sum"),
+    total_views=("views", "sum"),
+    total_engagement=("engagement", "sum"),
+    avg_engagement_rate=("engagement_rate", "mean"),
+).reset_index()
+yoy["edition_sort"] = yoy["edition"].str.extract(r"\((\d+)\)").astype(int)
+yoy = yoy.sort_values("edition_sort")
+
+ycol1, ycol2, ycol3 = st.columns(3)
+with ycol1:
+    fig_yoy_posts = px.bar(yoy, x="edition", y="posts", labels={"edition": "", "posts": "Δημοσιεύσεις"})
+    st.plotly_chart(fig_yoy_posts, width='stretch')
+with ycol2:
+    fig_yoy_reach = px.bar(yoy, x="edition", y="total_reach", labels={"edition": "", "total_reach": "Σύνολο απήχησης"})
+    st.plotly_chart(fig_yoy_reach, width='stretch')
+with ycol3:
+    fig_yoy_views = px.bar(yoy, x="edition", y="total_views", labels={"edition": "", "total_views": "Σύνολο views"})
+    st.plotly_chart(fig_yoy_views, width='stretch')
+
+yoy_display = yoy.drop(columns=["edition_sort"]).copy()
+yoy_display["avg_engagement_rate"] = (yoy_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
+for c in ["total_reach", "total_views", "total_engagement"]:
+    yoy_display[c] = yoy_display[c].astype(int)
+yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο απήχησης", "Σύνολο views", "Σύνολο engagement", "Μέσο engagement rate"]
+st.dataframe(yoy_display, width='stretch', hide_index=True)
 
 st.markdown("---")
 
@@ -330,6 +386,129 @@ else:
 
 st.markdown("---")
 
+# ------------------------------------------------ DURATION VS REACH -----
+st.subheader("🎬 Διάρκεια βίντεο/story vs απήχηση")
+dur = owned[owned["duration_sec"].notna() & (owned["duration_sec"] > 0)].copy()
+if len(dur) >= 5:
+    dur["duration_bucket"] = pd.cut(
+        dur["duration_sec"],
+        bins=[0, 5, 15, 30, 60, 120, 1e9],
+        labels=["≤5s", "6-15s", "16-30s", "31-60s", "61-120s", ">120s"],
+    )
+    dcol1, dcol2 = st.columns(2)
+    with dcol1:
+        fig_dur_scatter = px.scatter(
+            dur, x="duration_sec", y="reach", color="format",
+            labels={"duration_sec": "Διάρκεια (δευτ.)", "reach": "Απήχηση", "format": "Τύπος"},
+            hover_data=["text"],
+        )
+        st.plotly_chart(fig_dur_scatter, width='stretch')
+    with dcol2:
+        dur_bucket_summary = dur.groupby("duration_bucket", observed=True).agg(
+            posts=("id", "count"), avg_reach=("reach", "mean")
+        ).reset_index()
+        fig_dur_bucket = px.bar(dur_bucket_summary, x="duration_bucket", y="avg_reach", text="posts",
+                                 labels={"duration_bucket": "Διάρκεια", "avg_reach": "Μέση απήχηση"})
+        fig_dur_bucket.update_traces(texttemplate="n=%{text}", textposition="outside")
+        st.plotly_chart(fig_dur_bucket, width='stretch')
+    corr = dur["duration_sec"].corr(dur["reach"])
+    st.caption(f"Συσχέτιση διάρκειας–απήχησης: r ≈ {corr:.2f} (κοντά στο 0 = ασθενής σχέση).")
+else:
+    st.info("Δεν υπάρχουν αρκετές δημοσιεύσεις με καταγεγραμμένη διάρκεια στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# --------------------------------------------- CAPTION LENGTH VS ENG. ---
+st.subheader("✏️ Μήκος κειμένου vs engagement rate")
+cl = owned[(owned["text_length"] > 0) & owned["engagement_rate"].notna()].copy()
+if len(cl) >= 5:
+    cl["length_bucket"] = pd.cut(
+        cl["text_length"],
+        bins=[0, 50, 150, 300, 600, 1e9],
+        labels=["≤50 χαρ.", "51-150", "151-300", "301-600", ">600"],
+    )
+    lcol1, lcol2 = st.columns(2)
+    with lcol1:
+        fig_len_scatter = px.scatter(
+            cl, x="text_length", y="engagement_rate", color="channel",
+            labels={"text_length": "Μήκος κειμένου (χαρακτήρες)", "engagement_rate": "Engagement rate"},
+        )
+        fig_len_scatter.update_yaxes(tickformat=".0%")
+        st.plotly_chart(fig_len_scatter, width='stretch')
+    with lcol2:
+        len_bucket_summary = cl.groupby("length_bucket", observed=True).agg(
+            posts=("id", "count"), avg_er=("engagement_rate", "mean")
+        ).reset_index()
+        fig_len_bucket = px.bar(len_bucket_summary, x="length_bucket", y="avg_er", text="posts",
+                                 labels={"length_bucket": "Μήκος κειμένου", "avg_er": "Μέσο engagement rate"})
+        fig_len_bucket.update_yaxes(tickformat=".1%")
+        fig_len_bucket.update_traces(texttemplate="n=%{text}", textposition="outside")
+        st.plotly_chart(fig_len_bucket, width='stretch')
+    corr_len = cl["text_length"].corr(cl["engagement_rate"])
+    st.caption(f"Συσχέτιση μήκους κειμένου–engagement rate: r ≈ {corr_len:.2f}.")
+else:
+    st.info("Δεν υπάρχουν αρκετά δεδομένα κειμένου/engagement στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# ------------------------------------------------- HASHTAG PERFORMANCE --
+st.subheader("🏷️ Απόδοση hashtags")
+st.caption(
+    "Εξαιρείται το σταθερό branded hashtag (#chaniabookfestival) ώστε να αναδειχθούν "
+    "τα πιο 'θεματικά' hashtags."
+)
+ht_df = build_hashtag_table(owned)
+if len(ht_df):
+    htcol1, htcol2 = st.columns(2)
+    with htcol1:
+        top_ht_reach = ht_df.nlargest(15, "total_reach")
+        fig_ht = px.bar(top_ht_reach, x="hashtag", y="total_reach", text="posts",
+                         labels={"hashtag": "Hashtag", "total_reach": "Συνολική απήχηση"})
+        fig_ht.update_traces(texttemplate="n=%{text}", textposition="outside")
+        st.plotly_chart(fig_ht, width='stretch')
+    with htcol2:
+        ht_display = ht_df.head(20).copy()
+        ht_display["avg_reach"] = ht_display["avg_reach"].round(0).astype(int)
+        ht_display["total_reach"] = ht_display["total_reach"].astype(int)
+        ht_display.columns = ["Hashtag", "Δημοσιεύσεις", "Συνολική απήχηση", "Μέση απήχηση"]
+        st.dataframe(ht_display, width='stretch', hide_index=True)
+else:
+    st.info("Δεν εντοπίστηκαν hashtags (πέρα από το branded) στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# --------------------------------------------------- REACH VELOCITY -----
+st.subheader("⏱️ Ταχύτητα συσσώρευσης απήχησης")
+st.caption(
+    "Το export του Meta δεν δίνει ωριαία στοιχεία απήχησης, οπότε αυτό είναι ένα proxy: "
+    "συγκρίνει την καταγεγραμμένη απήχηση με το πόσες μέρες έχουν περάσει από τη δημοσίευση "
+    "μέχρι την ημερομηνία εξαγωγής δεδομένων (12/7 κάθε έτους). Αν οι πρόσφατες δημοσιεύσεις "
+    "έχουν συστηματικά χαμηλότερη απήχηση, σημαίνει ότι η απήχηση συνεχίζει να ανεβαίνει με τον χρόνο."
+)
+velocity = owned.copy()
+export_cutoffs = {y: pd.Timestamp(f"{y}-07-12 23:59:59") for y in velocity["year"].unique()}
+velocity["days_since_post"] = velocity.apply(
+    lambda r: (export_cutoffs[r["year"]] - r["dt"]).days, axis=1
+)
+velocity = velocity[velocity["days_since_post"] >= 0]
+if len(velocity) >= 5:
+    velocity["recency_bucket"] = pd.cut(
+        velocity["days_since_post"],
+        bins=[-1, 1, 3, 7, 14, 30, 1e9],
+        labels=["0-1 μέρες", "2-3", "4-7", "8-14", "15-30", ">30"],
+    )
+    vel_summary = velocity.groupby("recency_bucket", observed=True).agg(
+        posts=("id", "count"), avg_reach=("reach", "mean")
+    ).reset_index()
+    fig_vel = px.bar(vel_summary, x="recency_bucket", y="avg_reach", text="posts",
+                      labels={"recency_bucket": "Μέρες από τη δημοσίευση έως την εξαγωγή", "avg_reach": "Μέση απήχηση"})
+    fig_vel.update_traces(texttemplate="n=%{text}", textposition="outside")
+    st.plotly_chart(fig_vel, width='stretch')
+else:
+    st.info("Δεν υπάρχουν αρκετά δεδομένα για αυτή την ανάλυση στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
 # ------------------------------------------------------ POSTING DATES ---
 st.subheader("🗓️ Πότε έγιναν οι αναρτήσεις")
 st.caption(
@@ -359,10 +538,10 @@ with pcol2:
     fig_week_count = px.bar(
         weekly_counts, x="Εβδομάδα", y="Αναρτήσεις", color="Κανάλι", barmode="stack"
     )
-    fig_week_count.add_vrect(
-        x0=FESTIVAL_START, x1=FESTIVAL_END,
-        fillcolor="orange", opacity=0.12, line_width=0,
-    )
+    for yr in sorted(owned["year"].dropna().unique()):
+        if yr in FESTIVAL_DATES:
+            start, end = FESTIVAL_DATES[yr]
+            fig_week_count.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.12, line_width=0)
     st.plotly_chart(fig_week_count, width='stretch')
 
 st.markdown("**Ημερολογιακή πυκνότητα αναρτήσεων** (ημέρα × ώρα, αριθμός δημοσιεύσεων)")
