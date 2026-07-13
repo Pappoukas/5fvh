@@ -66,7 +66,7 @@ def load_instagram_stories(year: int) -> pd.DataFrame:
     out = pd.DataFrame({
         "id": df["Αναγνωριστικό δημοσίευσης"],
         "account": df["Όνομα λογαριασμού"],
-        "channel": "Instagram",
+        "channel": "Instagram Stories",
         "format": "Story",
         "text": df["Περιγραφή"].fillna(""),
         "duration_sec": _col(df, "Διάρκεια (δευτ.)", np.nan),
@@ -132,7 +132,7 @@ def load_instagram_feed(year: int) -> pd.DataFrame:
     out = pd.DataFrame({
         "id": df["Αναγνωριστικό δημοσίευσης"],
         "account": df["Όνομα λογαριασμού"],
-        "channel": "Instagram",
+        "channel": "Instagram Feed",
         "format": df["Τύπος δημοσίευσης"].replace({
             "Εναλλασσόμενες εικόνες IG": "Carousel",
             "IG reel": "Reel",
