@@ -1,7 +1,15 @@
 """
 Chania Book Festival — Social Media Analytics Dashboard
 Streamlit app για ανάλυση της επικοινωνιακής στρατηγικής social media
-του 5ου Φεστιβάλ Βιβλίου Χανίων (Instagram Stories, Facebook, Instagram Feed).
+του Φεστιβάλ Βιβλίου Χανίων (Instagram Stories, Facebook, Instagram Feed).
+
+Μετρική αναφοράς: ΠΡΟΒΟΛΕΣ (views), όχι απήχηση (reach). Η απήχηση δεν είναι
+αθροιστική — ο ίδιος χρήστης μπορεί να μετρηθεί σε πολλαπλές δημοσιεύσεις,
+οπότε το άθροισμα "Απήχηση" πολλών posts υπερεκτιμά σοβαρά το πραγματικό
+μοναδικό κοινό. Οι προβολές (views) είναι πραγματικά αθροιστικές. Η μεμονωμένη
+τιμή "Απήχηση" ενός post παραμένει έγκυρη ως στοιχείο ανά ανάρτηση και
+εμφανίζεται σε μερικούς πίνακες λεπτομέρειας, αλλά δεν χρησιμοποιείται πλέον
+πουθενά ως αθροισμένη/μέση μετρική.
 """
 
 import os
@@ -73,8 +81,11 @@ st.sidebar.caption(
     "Δεδομένα: εξαγωγές Meta Business Suite, "
     f"{date_min.strftime('%d/%m/%Y')} – {date_max.strftime('%d/%m/%Y')}, "
     "3 διοργανώσεις (2024–2026).\n\n"
-    "⚠️ Τα δεδομένα απήχησης του 2024 είναι εν μέρει ελλιπή στην πηγή τους "
-    "(ιδίως για τα Stories) — σύγκρινε με προσοχή."
+    "⚠️ Το 2024 έχει σοβαρά ελλιπή δεδομένα στην πηγή: 0 προβολές για Facebook "
+    "(η στήλη δεν υπήρχε στο export τότε) και σχεδόν καθόλου προβολές για τα "
+    "Instagram Stories. Σύγκρινε το 2024 με μεγάλη επιφύλαξη.\n\n"
+    "📏 Μετρική αναφοράς: **προβολές (views)**, όχι απήχηση — η απήχηση δεν "
+    "αθροίζεται σωστά μεταξύ πολλών δημοσιεύσεων."
 )
 
 # --------------------------------------------------------------- TITLE ----
@@ -94,22 +105,26 @@ if len(owned) == 0:
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Δημοσιεύσεις (δικές μας)", f"{len(owned):,}")
-c2.metric("Συνολική απήχηση (reach)", f"{int(owned['reach'].sum()):,}")
+c2.metric("Συνολικές προβολές (views)", f"{int(owned['views'].sum()):,}")
 c3.metric("Σύνολο engagement", f"{int(owned['engagement'].sum()):,}")
 avg_er = owned.loc[owned["reach"] > 0, "engagement_rate"].mean()
 c4.metric("Μέσο engagement rate", f"{avg_er:.1%}" if pd.notna(avg_er) else "—")
 c5.metric("Αναφορές από τρίτους (earned)", f"{len(earned):,}")
+st.caption(
+    "Το engagement rate υπολογίζεται ως engagement/απήχηση ανά μεμονωμένη δημοσίευση και μετά "
+    "παίρνεται ο μέσος όρος — αυτό είναι έγκυρο (δεν αθροίζει reach), σε αντίθεση με ένα «σύνολο απήχησης»."
+)
 
 st.markdown("---")
 
 # ---------------------------------------------------------- TIMELINE -----
-st.subheader("📈 Εξέλιξη απήχησης στον χρόνο")
+st.subheader("📈 Εξέλιξη προβολών στον χρόνο")
 weekly = (
-    owned.groupby(pd.Grouper(key="dt", freq="W"))["reach"]
+    owned.groupby(pd.Grouper(key="dt", freq="W"))["views"]
     .sum()
     .reset_index()
 )
-fig = px.area(weekly, x="dt", y="reach", labels={"dt": "Εβδομάδα", "reach": "Απήχηση"})
+fig = px.area(weekly, x="dt", y="views", labels={"dt": "Εβδομάδα", "views": "Προβολές"})
 for yr in sorted(owned["year"].dropna().unique()):
     if yr in FESTIVAL_DATES:
         start, end = FESTIVAL_DATES[yr]
@@ -121,27 +136,26 @@ for yr in sorted(owned["year"].dropna().unique()):
 st.plotly_chart(fig, width='stretch')
 
 phase_summary = (
-    owned.groupby("phase")["reach"].agg(["count", "sum", "mean"]).reindex(
+    owned.groupby("phase")["views"].agg(["count", "sum", "mean"]).reindex(
         ["Πριν το Φεστιβάλ", "Κατά το Φεστιβάλ", "Μετά το Φεστιβάλ"]
     )
 )
 pc1, pc2, pc3 = st.columns(3)
 for col, phase in zip([pc1, pc2, pc3], phase_summary.index):
     row = phase_summary.loc[phase]
-    col.metric(phase, f"{int(row['sum']):,} reach", f"{int(row['count'])} posts · μ.ό. {int(row['mean']):,}")
+    col.metric(phase, f"{int(row['sum']):,} views", f"{int(row['count'])} posts · μ.ό. {int(row['mean']):,}")
 
 st.markdown("---")
 
 # --------------------------------------------------- YEAR-OVER-YEAR -----
 st.subheader("📅 Σύγκριση διοργανώσεων (Year-over-Year)")
 st.caption(
-    "⚠️ Το 2024 έχει εν μέρει ελλιπή δεδομένα απήχησης στην πηγή (Meta export) — "
-    "ειδικά τα Instagram Stories του 2024 δείχνουν μη ρεαλιστικά χαμηλή απήχηση. "
-    "Για το 2024 δες παράλληλα και τη στήλη «Views» που είναι πληρέστερη."
+    "⚠️ Το 2024 δεν έχει καθόλου δεδομένα προβολών για Facebook (η στήλη έλειπε από το "
+    "export της χρονιάς) και σχεδόν καθόλου για τα Instagram Stories — η στήλη «2024» "
+    "στα παρακάτω γραφήματα θα εμφανίζεται τεχνητά χαμηλή."
 )
 yoy = owned.groupby("edition").agg(
     posts=("id", "count"),
-    total_reach=("reach", "sum"),
     total_views=("views", "sum"),
     total_engagement=("engagement", "sum"),
     avg_engagement_rate=("engagement_rate", "mean"),
@@ -149,22 +163,19 @@ yoy = owned.groupby("edition").agg(
 yoy["edition_sort"] = yoy["edition"].str.extract(r"\((\d+)\)").astype(int)
 yoy = yoy.sort_values("edition_sort")
 
-ycol1, ycol2, ycol3 = st.columns(3)
+ycol1, ycol2 = st.columns(2)
 with ycol1:
     fig_yoy_posts = px.bar(yoy, x="edition", y="posts", labels={"edition": "", "posts": "Δημοσιεύσεις"})
     st.plotly_chart(fig_yoy_posts, width='stretch')
 with ycol2:
-    fig_yoy_reach = px.bar(yoy, x="edition", y="total_reach", labels={"edition": "", "total_reach": "Σύνολο απήχησης"})
-    st.plotly_chart(fig_yoy_reach, width='stretch')
-with ycol3:
-    fig_yoy_views = px.bar(yoy, x="edition", y="total_views", labels={"edition": "", "total_views": "Σύνολο views"})
+    fig_yoy_views = px.bar(yoy, x="edition", y="total_views", labels={"edition": "", "total_views": "Σύνολο προβολών"})
     st.plotly_chart(fig_yoy_views, width='stretch')
 
 yoy_display = yoy.drop(columns=["edition_sort"]).copy()
 yoy_display["avg_engagement_rate"] = (yoy_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
-for c in ["total_reach", "total_views", "total_engagement"]:
+for c in ["total_views", "total_engagement"]:
     yoy_display[c] = yoy_display[c].astype(int)
-yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο απήχησης", "Σύνολο views", "Σύνολο engagement", "Μέσο engagement rate"]
+yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο προβολών", "Σύνολο engagement", "Μέσο engagement rate"]
 st.dataframe(yoy_display, width='stretch', hide_index=True)
 
 st.markdown("---")
@@ -174,21 +185,22 @@ col_left, col_right = st.columns(2)
 
 with col_left:
     st.subheader("📊 Απόδοση ανά κανάλι")
+    st.caption("Facebook, Instagram Feed και Instagram Stories εμφανίζονται ως 3 ξεχωριστά κανάλια.")
     ch = owned.groupby("channel").agg(
-        posts=("id", "count"), reach=("reach", "sum"), engagement=("engagement", "sum")
+        posts=("id", "count"), views=("views", "sum"), engagement=("engagement", "sum")
     ).reset_index()
-    fig_ch = px.bar(ch, x="channel", y="reach", text="posts",
-                     labels={"reach": "Συνολική απήχηση", "channel": "Κανάλι"})
+    fig_ch = px.bar(ch, x="channel", y="views", text="posts",
+                     labels={"views": "Συνολικές προβολές", "channel": "Κανάλι"})
     fig_ch.update_traces(texttemplate="%{text} posts", textposition="outside")
     st.plotly_chart(fig_ch, width='stretch')
 
 with col_right:
     st.subheader("🎞️ Απόδοση ανά τύπο περιεχομένου")
     fmt = owned.groupby("format").agg(
-        posts=("id", "count"), avg_reach=("reach", "mean")
-    ).reset_index().sort_values("avg_reach", ascending=False)
-    fig_fmt = px.bar(fmt, x="format", y="avg_reach", text="posts",
-                      labels={"avg_reach": "Μέση απήχηση/post", "format": "Τύπος"})
+        posts=("id", "count"), avg_views=("views", "mean")
+    ).reset_index().sort_values("avg_views", ascending=False)
+    fig_fmt = px.bar(fmt, x="format", y="avg_views", text="posts",
+                      labels={"avg_views": "Μέσες προβολές/post", "format": "Τύπος"})
     fig_fmt.update_traces(texttemplate="n=%{text}", textposition="outside")
     st.plotly_chart(fig_fmt, width='stretch')
 
@@ -196,9 +208,8 @@ st.markdown("#### 🔍 Λεπτομερής σύγκριση καναλιών")
 detail = owned.groupby("channel").agg(
     posts=("id", "count"),
     total_views=("views", "sum"),
-    total_reach=("reach", "sum"),
-    avg_reach=("reach", "mean"),
-    median_reach=("reach", "median"),
+    avg_views=("views", "mean"),
+    median_views=("views", "median"),
     total_engagement=("engagement", "sum"),
     avg_engagement_rate=("engagement_rate", "mean"),
     likes=("likes", "sum"),
@@ -206,14 +217,14 @@ detail = owned.groupby("channel").agg(
     comments=("comments", "sum"),
 ).reset_index()
 detail_display = detail.copy()
-detail_display["avg_reach"] = detail_display["avg_reach"].round(0).astype(int)
-detail_display["median_reach"] = detail_display["median_reach"].round(0).astype(int)
+detail_display["avg_views"] = detail_display["avg_views"].round(0).astype(int)
+detail_display["median_views"] = detail_display["median_views"].round(0).astype(int)
 detail_display["avg_engagement_rate"] = (detail_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
-for c in ["total_views", "total_reach", "total_engagement", "likes", "shares", "comments"]:
+for c in ["total_views", "total_engagement", "likes", "shares", "comments"]:
     detail_display[c] = detail_display[c].astype(int)
 detail_display.columns = [
-    "Κανάλι", "Δημοσιεύσεις", "Σύνολο views", "Σύνολο reach", "Μέσο reach",
-    "Median reach", "Σύνολο engagement", "Μέσο engagement rate",
+    "Κανάλι", "Δημοσιεύσεις", "Σύνολο views", "Μέσο views",
+    "Median views", "Σύνολο engagement", "Μέσο engagement rate",
     "Likes", "Shares", "Comments",
 ]
 st.dataframe(detail_display, width='stretch', hide_index=True)
@@ -222,29 +233,31 @@ st.markdown("---")
 
 # ------------------------------------------------------- BEST TIMING -----
 st.subheader("🕒 Πότε αποδίδουν καλύτερα οι δημοσιεύσεις")
-heat = owned.groupby(["weekday", "hour"])["reach"].mean().reset_index()
+heat = owned.groupby(["weekday", "hour"])["views"].mean().reset_index()
 weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 gr_days = {"Monday": "Δευ", "Tuesday": "Τρι", "Wednesday": "Τετ", "Thursday": "Πεμ",
            "Friday": "Παρ", "Saturday": "Σαβ", "Sunday": "Κυρ"}
 heat["weekday"] = pd.Categorical(heat["weekday"], categories=weekday_order, ordered=True)
 heat["weekday_gr"] = heat["weekday"].map(gr_days)
-heat_pivot = heat.pivot(index="weekday_gr", columns="hour", values="reach").reindex(
+heat_pivot = heat.pivot(index="weekday_gr", columns="hour", values="views").reindex(
     [gr_days[d] for d in weekday_order]
 )
 fig_heat = px.imshow(
     heat_pivot, aspect="auto", color_continuous_scale="Oranges",
-    labels=dict(x="Ώρα", y="Ημέρα", color="Μέση απήχηση"),
+    labels=dict(x="Ώρα", y="Ημέρα", color="Μέσες προβολές"),
 )
 st.plotly_chart(fig_heat, width='stretch')
 
 st.markdown("---")
 
 # ----------------------------------------------------------- TOP POSTS ---
-st.subheader("🏆 Top 10 δημοσιεύσεις (δικές μας) ανά απήχηση")
-top = owned.nlargest(10, "reach")[["dt", "channel", "format", "text", "reach", "engagement", "link"]].copy()
+st.subheader("🏆 Top 10 δημοσιεύσεις (δικές μας) ανά προβολές")
+top = owned.nlargest(10, "views")[["dt", "channel", "format", "text", "views", "reach", "engagement", "link"]].copy()
 top["text"] = top["text"].str.slice(0, 90) + "…"
 top["dt"] = top["dt"].dt.strftime("%d/%m/%Y %H:%M")
+top.columns = ["Ημερομηνία/Ώρα", "Κανάλι", "Τύπος", "Κείμενο", "Views", "Reach", "Engagement", "Σύνδεσμος"]
 st.dataframe(top, width='stretch', hide_index=True)
+st.caption("Η στήλη «Reach» δείχνει την απήχηση αυτής της συγκεκριμένης ανάρτησης (έγκυρη ανά post, δεν αθροίζεται).")
 
 st.markdown("---")
 
@@ -257,7 +270,7 @@ if len(earned):
     fig_em = px.bar(em, x="account", y="mentions", labels={"account": "Λογαριασμός", "mentions": "Αναφορές"})
     st.plotly_chart(fig_em, width='stretch')
     st.caption(
-        "Το Meta δεν παρέχει δεδομένα απήχησης/engagement για δημοσιεύσεις τρίτων λογαριασμών — "
+        "Το Meta δεν παρέχει δεδομένα απήχησης/views/engagement για δημοσιεύσεις τρίτων λογαριασμών — "
         "μετράμε μόνο τον αριθμό αναφορών/tags."
     )
 else:
@@ -283,6 +296,7 @@ if freqs:
         ax_wc.imshow(wc, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
+        plt.close(fig_wc)
     with wcol2:
         top_words = pd.DataFrame(list(freqs.items())[:15], columns=["Λέξη", "Συχνότητα"])
         st.dataframe(top_words, width='stretch', hide_index=True)
@@ -292,17 +306,17 @@ else:
 st.markdown("---")
 
 # ---------------------------------------------------- AUTHORS/SPEAKERS ---
-st.subheader("🗣️ Συγγραφείς & Ομιλητές — ποιοι φέρνουν τη μεγαλύτερη απήχηση")
+st.subheader("🗣️ Συγγραφείς & Ομιλητές — ποιοι φέρνουν τις περισσότερες προβολές")
 st.caption(
     "Heuristic εξαγωγή ονομάτων (regex σε διαδοχικές λέξεις με κεφαλαίο αρχικό) — "
     "όχι πλήρες NER, οπότε ενδέχεται να περιλαμβάνει και μη-πρόσωπα. Χρήσιμο ως πρώτη ένδειξη."
 )
-names_df = build_names_table(owned)
+names_df = build_names_table(owned, reach_col="views")
 if len(names_df):
     top_names = names_df.head(20).copy()
     top_names["avg_reach"] = top_names["avg_reach"].round(0).astype(int)
     top_names["total_reach"] = top_names["total_reach"].astype(int)
-    top_names.columns = ["Όνομα", "Αναφορές", "Συνολική απήχηση", "Μέση απήχηση"]
+    top_names.columns = ["Όνομα", "Αναφορές", "Συνολικές προβολές", "Μέσες προβολές"]
     st.dataframe(top_names, width='stretch', hide_index=True)
 else:
     st.info("Δεν εντοπίστηκαν ονόματα στο επιλεγμένο εύρος.")
@@ -317,25 +331,25 @@ st.caption(
 )
 cat_df = add_category_column(owned)
 cat_summary = cat_df.groupby("category").agg(
-    posts=("id", "count"), avg_reach=("reach", "mean"), total_reach=("reach", "sum")
-).reset_index().sort_values("total_reach", ascending=False)
+    posts=("id", "count"), avg_views=("views", "mean"), total_views=("views", "sum")
+).reset_index().sort_values("total_views", ascending=False)
 ccol1, ccol2 = st.columns([1, 1])
 with ccol1:
-    fig_cat = px.bar(cat_summary, x="category", y="total_reach", text="posts",
-                      labels={"category": "Κατηγορία", "total_reach": "Συνολική απήχηση"})
+    fig_cat = px.bar(cat_summary, x="category", y="total_views", text="posts",
+                      labels={"category": "Κατηγορία", "total_views": "Συνολικές προβολές"})
     fig_cat.update_traces(texttemplate="n=%{text}", textposition="outside")
     st.plotly_chart(fig_cat, width='stretch')
 with ccol2:
-    fig_cat_avg = px.bar(cat_summary.sort_values("avg_reach", ascending=False),
-                          x="category", y="avg_reach",
-                          labels={"category": "Κατηγορία", "avg_reach": "Μέση απήχηση/post"})
+    fig_cat_avg = px.bar(cat_summary.sort_values("avg_views", ascending=False),
+                          x="category", y="avg_views",
+                          labels={"category": "Κατηγορία", "avg_views": "Μέσες προβολές/post"})
     st.plotly_chart(fig_cat_avg, width='stretch')
 
 st.markdown("---")
 
 # ------------------------------------------------- INSTAGRAM STORIES ----
 st.subheader("📱 Instagram Stories — ειδικές μετρικές")
-stories = owned[owned["format"] == "Story"]
+stories = owned[owned["channel"] == "Instagram Stories"]
 if len(stories):
     scol1, scol2, scol3, scol4, scol5 = st.columns(5)
     scol1.metric("Απαντήσεις (replies)", f"{int(stories['story_replies'].sum()):,}")
@@ -349,7 +363,7 @@ if len(stories):
         f"μέσος όρος {stories['story_navigation'].mean():.0f} ανά story."
     )
     story_top = stories.nlargest(5, "story_link_clicks")[
-        ["dt", "text", "reach", "story_link_clicks", "story_profile_visits", "link"]
+        ["dt", "text", "views", "story_link_clicks", "story_profile_visits", "link"]
     ].copy()
     if story_top["story_link_clicks"].sum() > 0:
         story_top["dt"] = story_top["dt"].dt.strftime("%d/%m/%Y %H:%M")
@@ -372,7 +386,7 @@ if len(fb_owned) and ("fb_hide_all" in fb_owned.columns):
     ncol2.metric("«Απόκρυψη» (hide this post)", hide_n)
     affected = fb_owned[(fb_owned["fb_hide_all"].fillna(0) > 0) | (fb_owned["fb_hide"].fillna(0) > 0)]
     if len(affected):
-        aff_display = affected[["dt", "text", "reach", "fb_hide_all", "fb_hide", "link"]].copy()
+        aff_display = affected[["dt", "text", "views", "fb_hide_all", "fb_hide", "link"]].copy()
         aff_display["dt"] = aff_display["dt"].dt.strftime("%d/%m/%Y %H:%M")
         aff_display["text"] = aff_display["text"].str.slice(0, 70) + "…"
         st.markdown("**Δημοσιεύσεις με καταγεγραμμένο αρνητικό feedback:**")
@@ -386,8 +400,8 @@ else:
 
 st.markdown("---")
 
-# ------------------------------------------------ DURATION VS REACH -----
-st.subheader("🎬 Διάρκεια βίντεο/story vs απήχηση")
+# ------------------------------------------------ DURATION VS VIEWS -----
+st.subheader("🎬 Διάρκεια βίντεο/story vs προβολές")
 dur = owned[owned["duration_sec"].notna() & (owned["duration_sec"] > 0)].copy()
 if len(dur) >= 5:
     dur["duration_bucket"] = pd.cut(
@@ -398,21 +412,21 @@ if len(dur) >= 5:
     dcol1, dcol2 = st.columns(2)
     with dcol1:
         fig_dur_scatter = px.scatter(
-            dur, x="duration_sec", y="reach", color="format",
-            labels={"duration_sec": "Διάρκεια (δευτ.)", "reach": "Απήχηση", "format": "Τύπος"},
+            dur, x="duration_sec", y="views", color="format",
+            labels={"duration_sec": "Διάρκεια (δευτ.)", "views": "Προβολές", "format": "Τύπος"},
             hover_data=["text"],
         )
         st.plotly_chart(fig_dur_scatter, width='stretch')
     with dcol2:
         dur_bucket_summary = dur.groupby("duration_bucket", observed=True).agg(
-            posts=("id", "count"), avg_reach=("reach", "mean")
+            posts=("id", "count"), avg_views=("views", "mean")
         ).reset_index()
-        fig_dur_bucket = px.bar(dur_bucket_summary, x="duration_bucket", y="avg_reach", text="posts",
-                                 labels={"duration_bucket": "Διάρκεια", "avg_reach": "Μέση απήχηση"})
+        fig_dur_bucket = px.bar(dur_bucket_summary, x="duration_bucket", y="avg_views", text="posts",
+                                 labels={"duration_bucket": "Διάρκεια", "avg_views": "Μέσες προβολές"})
         fig_dur_bucket.update_traces(texttemplate="n=%{text}", textposition="outside")
         st.plotly_chart(fig_dur_bucket, width='stretch')
-    corr = dur["duration_sec"].corr(dur["reach"])
-    st.caption(f"Συσχέτιση διάρκειας–απήχησης: r ≈ {corr:.2f} (κοντά στο 0 = ασθενής σχέση).")
+    corr = dur["duration_sec"].corr(dur["views"])
+    st.caption(f"Συσχέτιση διάρκειας–προβολών: r ≈ {corr:.2f} (κοντά στο 0 = ασθενής σχέση).")
 else:
     st.info("Δεν υπάρχουν αρκετές δημοσιεύσεις με καταγεγραμμένη διάρκεια στο επιλεγμένο εύρος.")
 
@@ -457,33 +471,33 @@ st.caption(
     "Εξαιρείται το σταθερό branded hashtag (#chaniabookfestival) ώστε να αναδειχθούν "
     "τα πιο 'θεματικά' hashtags."
 )
-ht_df = build_hashtag_table(owned)
+ht_df = build_hashtag_table(owned, reach_col="views")
 if len(ht_df):
     htcol1, htcol2 = st.columns(2)
     with htcol1:
-        top_ht_reach = ht_df.nlargest(15, "total_reach")
-        fig_ht = px.bar(top_ht_reach, x="hashtag", y="total_reach", text="posts",
-                         labels={"hashtag": "Hashtag", "total_reach": "Συνολική απήχηση"})
+        top_ht_views = ht_df.nlargest(15, "total_reach")
+        fig_ht = px.bar(top_ht_views, x="hashtag", y="total_reach", text="posts",
+                         labels={"hashtag": "Hashtag", "total_reach": "Συνολικές προβολές"})
         fig_ht.update_traces(texttemplate="n=%{text}", textposition="outside")
         st.plotly_chart(fig_ht, width='stretch')
     with htcol2:
         ht_display = ht_df.head(20).copy()
         ht_display["avg_reach"] = ht_display["avg_reach"].round(0).astype(int)
         ht_display["total_reach"] = ht_display["total_reach"].astype(int)
-        ht_display.columns = ["Hashtag", "Δημοσιεύσεις", "Συνολική απήχηση", "Μέση απήχηση"]
+        ht_display.columns = ["Hashtag", "Δημοσιεύσεις", "Συνολικές προβολές", "Μέσες προβολές"]
         st.dataframe(ht_display, width='stretch', hide_index=True)
 else:
     st.info("Δεν εντοπίστηκαν hashtags (πέρα από το branded) στο επιλεγμένο εύρος.")
 
 st.markdown("---")
 
-# --------------------------------------------------- REACH VELOCITY -----
-st.subheader("⏱️ Ταχύτητα συσσώρευσης απήχησης")
+# --------------------------------------------------- VIEWS VELOCITY -----
+st.subheader("⏱️ Ταχύτητα συσσώρευσης προβολών")
 st.caption(
-    "Το export του Meta δεν δίνει ωριαία στοιχεία απήχησης, οπότε αυτό είναι ένα proxy: "
-    "συγκρίνει την καταγεγραμμένη απήχηση με το πόσες μέρες έχουν περάσει από τη δημοσίευση "
+    "Το export του Meta δεν δίνει ωριαία στοιχεία, οπότε αυτό είναι ένα proxy: "
+    "συγκρίνει τις καταγεγραμμένες προβολές με το πόσες μέρες έχουν περάσει από τη δημοσίευση "
     "μέχρι την ημερομηνία εξαγωγής δεδομένων (12/7 κάθε έτους). Αν οι πρόσφατες δημοσιεύσεις "
-    "έχουν συστηματικά χαμηλότερη απήχηση, σημαίνει ότι η απήχηση συνεχίζει να ανεβαίνει με τον χρόνο."
+    "έχουν συστηματικά χαμηλότερες προβολές, σημαίνει ότι οι προβολές συνεχίζουν να ανεβαίνουν με τον χρόνο."
 )
 velocity = owned.copy()
 export_cutoffs = {y: pd.Timestamp(f"{y}-07-12 23:59:59") for y in velocity["year"].unique()}
@@ -498,10 +512,10 @@ if len(velocity) >= 5:
         labels=["0-1 μέρες", "2-3", "4-7", "8-14", "15-30", ">30"],
     )
     vel_summary = velocity.groupby("recency_bucket", observed=True).agg(
-        posts=("id", "count"), avg_reach=("reach", "mean")
+        posts=("id", "count"), avg_views=("views", "mean")
     ).reset_index()
-    fig_vel = px.bar(vel_summary, x="recency_bucket", y="avg_reach", text="posts",
-                      labels={"recency_bucket": "Μέρες από τη δημοσίευση έως την εξαγωγή", "avg_reach": "Μέση απήχηση"})
+    fig_vel = px.bar(vel_summary, x="recency_bucket", y="avg_views", text="posts",
+                      labels={"recency_bucket": "Μέρες από τη δημοσίευση έως την εξαγωγή", "avg_views": "Μέσες προβολές"})
     fig_vel.update_traces(texttemplate="n=%{text}", textposition="outside")
     st.plotly_chart(fig_vel, width='stretch')
 else:
@@ -558,11 +572,11 @@ fig_count_heat = px.imshow(
 st.plotly_chart(fig_count_heat, width='stretch')
 
 with st.expander("📋 Αναλυτική λίστα όλων των αναρτήσεων (ημερομηνία/ώρα, κανάλι, τύπος)"):
-    schedule_table = owned[["dt", "channel", "format", "text", "reach", "link"]].copy()
+    schedule_table = owned[["dt", "channel", "format", "text", "views", "link"]].copy()
     schedule_table["dt"] = schedule_table["dt"].dt.strftime("%d/%m/%Y %H:%M")
     schedule_table["text"] = schedule_table["text"].str.slice(0, 60) + "…"
     schedule_table = schedule_table.sort_values("dt", ascending=False)
-    schedule_table.columns = ["Ημερομηνία/Ώρα", "Κανάλι", "Τύπος", "Κείμενο", "Απήχηση", "Σύνδεσμος"]
+    schedule_table.columns = ["Ημερομηνία/Ώρα", "Κανάλι", "Τύπος", "Κείμενο", "Προβολές", "Σύνδεσμος"]
     st.dataframe(schedule_table, width='stretch', hide_index=True)
 
 st.markdown("---")
@@ -578,13 +592,13 @@ if SHOW_STRATEGIC_INSIGHTS:
     best_fmt = fmt.iloc[0]["format"] if len(fmt) else None
     if best_fmt:
         insights.append(
-            f"Ο τύπος περιεχομένου **{best_fmt}** έχει τη μεγαλύτερη μέση απήχηση/δημοσίευση — "
+            f"Ο τύπος περιεχομένου **{best_fmt}** έχει τις περισσότερες μέσες προβολές/δημοσίευση — "
             "αξίζει μεγαλύτερη προτεραιότητα στο content plan."
         )
 
-    best_day_row = heat.groupby("weekday_gr")["reach"].mean().idxmax()
+    best_day_row = heat.groupby("weekday_gr")["views"].mean().idxmax()
     insights.append(
-        f"Η ημέρα με τη μεγαλύτερη μέση απήχηση είναι **{best_day_row}** — "
+        f"Η ημέρα με τις περισσότερες μέσες προβολές είναι **{best_day_row}** — "
         "καλό timing για τις πιο σημαντικές ανακοινώσεις."
     )
 
@@ -594,15 +608,15 @@ if SHOW_STRATEGIC_INSIGHTS:
     if pre_sum and during_sum:
         ratio = during_sum / pre_sum
         insights.append(
-            f"Η απήχηση κατά τη διάρκεια του φεστιβάλ ήταν **{ratio:.1f}×** μεγαλύτερη σε σχέση με "
+            f"Οι προβολές κατά τη διάρκεια του φεστιβάλ ήταν **{ratio:.1f}×** περισσότερες σε σχέση με "
             "την περίοδο πριν — η ένταση δημοσιεύσεων τις ημέρες του event αποδίδει, αλλά "
-            f"σημαίνει επίσης ότι η pre-event περίοδος (~{pre_sum:,.0f} reach σε σύνολο) χρειάζεται "
+            f"σημαίνει επίσης ότι η pre-event περίοδος (~{pre_sum:,.0f} views σε σύνολο) χρειάζεται "
             "πιο στοχευμένο, όχι απλώς πιο συχνό, περιεχόμενο."
         )
     if post_sum and during_sum:
         drop = 1 - (post_sum / during_sum)
         insights.append(
-            f"Μετά τη λήξη του φεστιβάλ η απήχηση μειώθηκε κατά **{drop:.0%}** — "
+            f"Μετά τη λήξη του φεστιβάλ οι προβολές μειώθηκαν κατά **{drop:.0%}** — "
             "recap/highlight περιεχόμενο τις πρώτες 5-7 ημέρες μετά μπορεί να επιμηκύνει τη ζωή της καμπάνιας."
         )
 
