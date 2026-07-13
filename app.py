@@ -4,14 +4,20 @@ Streamlit app για ανάλυση της επικοινωνιακής στρα
 του 5ου Φεστιβάλ Βιβλίου Χανίων (Instagram Stories, Facebook, Instagram Feed).
 """
 
+import os
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 
 from utils.data_loader import load_all, FESTIVAL_START, FESTIVAL_END
+from utils.text_analysis import word_frequencies, build_names_table, add_category_column
+
+GREEK_FONT_PATH = os.path.join(matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans.ttf")
 
 st.set_page_config(
     page_title="Chania Book Festival — Social Analytics",
@@ -88,7 +94,7 @@ fig.add_vrect(
     fillcolor="orange", opacity=0.15, line_width=0,
     annotation_text="Διάρκεια Φεστιβάλ", annotation_position="top left",
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 
 phase_summary = (
     owned.groupby("phase")["reach"].agg(["count", "sum", "mean"]).reindex(
@@ -113,7 +119,7 @@ with col_left:
     fig_ch = px.bar(ch, x="channel", y="reach", text="posts",
                      labels={"reach": "Συνολική απήχηση", "channel": "Κανάλι"})
     fig_ch.update_traces(texttemplate="%{text} posts", textposition="outside")
-    st.plotly_chart(fig_ch, use_container_width=True)
+    st.plotly_chart(fig_ch, width='stretch')
 
 with col_right:
     st.subheader("🎞️ Απόδοση ανά τύπο περιεχομένου")
@@ -123,7 +129,33 @@ with col_right:
     fig_fmt = px.bar(fmt, x="format", y="avg_reach", text="posts",
                       labels={"avg_reach": "Μέση απήχηση/post", "format": "Τύπος"})
     fig_fmt.update_traces(texttemplate="n=%{text}", textposition="outside")
-    st.plotly_chart(fig_fmt, use_container_width=True)
+    st.plotly_chart(fig_fmt, width='stretch')
+
+st.markdown("#### 🔍 Λεπτομερής σύγκριση καναλιών")
+detail = owned.groupby("channel").agg(
+    posts=("id", "count"),
+    total_views=("views", "sum"),
+    total_reach=("reach", "sum"),
+    avg_reach=("reach", "mean"),
+    median_reach=("reach", "median"),
+    total_engagement=("engagement", "sum"),
+    avg_engagement_rate=("engagement_rate", "mean"),
+    likes=("likes", "sum"),
+    shares=("shares", "sum"),
+    comments=("comments", "sum"),
+).reset_index()
+detail_display = detail.copy()
+detail_display["avg_reach"] = detail_display["avg_reach"].round(0).astype(int)
+detail_display["median_reach"] = detail_display["median_reach"].round(0).astype(int)
+detail_display["avg_engagement_rate"] = (detail_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
+for c in ["total_views", "total_reach", "total_engagement", "likes", "shares", "comments"]:
+    detail_display[c] = detail_display[c].astype(int)
+detail_display.columns = [
+    "Κανάλι", "Δημοσιεύσεις", "Σύνολο views", "Σύνολο reach", "Μέσο reach",
+    "Median reach", "Σύνολο engagement", "Μέσο engagement rate",
+    "Likes", "Shares", "Comments",
+]
+st.dataframe(detail_display, width='stretch', hide_index=True)
 
 st.markdown("---")
 
@@ -142,7 +174,7 @@ fig_heat = px.imshow(
     heat_pivot, aspect="auto", color_continuous_scale="Oranges",
     labels=dict(x="Ώρα", y="Ημέρα", color="Μέση απήχηση"),
 )
-st.plotly_chart(fig_heat, use_container_width=True)
+st.plotly_chart(fig_heat, width='stretch')
 
 st.markdown("---")
 
@@ -151,7 +183,7 @@ st.subheader("🏆 Top 10 δημοσιεύσεις (δικές μας) ανά α
 top = owned.nlargest(10, "reach")[["dt", "channel", "format", "text", "reach", "engagement", "link"]].copy()
 top["text"] = top["text"].str.slice(0, 90) + "…"
 top["dt"] = top["dt"].dt.strftime("%d/%m/%Y %H:%M")
-st.dataframe(top, use_container_width=True, hide_index=True)
+st.dataframe(top, width='stretch', hide_index=True)
 
 st.markdown("---")
 
@@ -162,7 +194,7 @@ if len(earned):
         "mentions", ascending=False
     )
     fig_em = px.bar(em, x="account", y="mentions", labels={"account": "Λογαριασμός", "mentions": "Αναφορές"})
-    st.plotly_chart(fig_em, use_container_width=True)
+    st.plotly_chart(fig_em, width='stretch')
     st.caption(
         "Το Meta δεν παρέχει δεδομένα απήχησης/engagement για δημοσιεύσεις τρίτων λογαριασμών — "
         "μετράμε μόνο τον αριθμό αναφορών/tags."
@@ -172,103 +204,128 @@ else:
 
 st.markdown("---")
 
-# ------------------------------------------------------- STORY METRICS ---
-st.subheader("📱 Ανάλυση Instagram Stories (μόνο δικές μας)")
+# --------------------------------------------------------- WORD CLOUD ---
+st.subheader("☁️ Word Cloud & συχνές λέξεις")
+st.caption(
+    "Το επαναλαμβανόμενο boilerplate κείμενο (γενική περιγραφή φεστιβάλ, hashtags, "
+    "σύνδεσμοι) έχει αφαιρεθεί ώστε να αναδειχθούν οι πραγματικές θεματικές."
+)
+freqs = word_frequencies(owned["text"], top_n=120)
+if freqs:
+    wcol1, wcol2 = st.columns([2, 1])
+    with wcol1:
+        wc = WordCloud(
+            width=1000, height=500, background_color="white",
+            font_path=GREEK_FONT_PATH, colormap="Oranges",
+        ).generate_from_frequencies(freqs)
+        fig_wc, ax_wc = plt.subplots(figsize=(10, 5))
+        ax_wc.imshow(wc, interpolation="bilinear")
+        ax_wc.axis("off")
+        st.pyplot(fig_wc)
+    with wcol2:
+        top_words = pd.DataFrame(list(freqs.items())[:15], columns=["Λέξη", "Συχνότητα"])
+        st.dataframe(top_words, width='stretch', hide_index=True)
+else:
+    st.info("Δεν υπάρχει αρκετό κείμενο στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# ---------------------------------------------------- AUTHORS/SPEAKERS ---
+st.subheader("🗣️ Συγγραφείς & Ομιλητές — ποιοι φέρνουν τη μεγαλύτερη απήχηση")
+st.caption(
+    "Heuristic εξαγωγή ονομάτων (regex σε διαδοχικές λέξεις με κεφαλαίο αρχικό) — "
+    "όχι πλήρες NER, οπότε ενδέχεται να περιλαμβάνει και μη-πρόσωπα. Χρήσιμο ως πρώτη ένδειξη."
+)
+names_df = build_names_table(owned)
+if len(names_df):
+    top_names = names_df.head(20).copy()
+    top_names["avg_reach"] = top_names["avg_reach"].round(0).astype(int)
+    top_names["total_reach"] = top_names["total_reach"].astype(int)
+    top_names.columns = ["Όνομα", "Αναφορές", "Συνολική απήχηση", "Μέση απήχηση"]
+    st.dataframe(top_names, width='stretch', hide_index=True)
+else:
+    st.info("Δεν εντοπίστηκαν ονόματα στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# ------------------------------------------------------ CATEGORIES ------
+st.subheader("🏷️ Κατηγοριοποίηση περιεχομένου")
+st.caption(
+    "Αυτόματη κατηγοριοποίηση βάσει λέξεων-κλειδιών στο κείμενο "
+    "(συζήτηση, παρουσίαση βιβλίου, εργαστήριο, συνέντευξη, ξενάγηση, βράβευση/τελετή, ανακοίνωση/πρόγραμμα)."
+)
+cat_df = add_category_column(owned)
+cat_summary = cat_df.groupby("category").agg(
+    posts=("id", "count"), avg_reach=("reach", "mean"), total_reach=("reach", "sum")
+).reset_index().sort_values("total_reach", ascending=False)
+ccol1, ccol2 = st.columns([1, 1])
+with ccol1:
+    fig_cat = px.bar(cat_summary, x="category", y="total_reach", text="posts",
+                      labels={"category": "Κατηγορία", "total_reach": "Συνολική απήχηση"})
+    fig_cat.update_traces(texttemplate="n=%{text}", textposition="outside")
+    st.plotly_chart(fig_cat, width='stretch')
+with ccol2:
+    fig_cat_avg = px.bar(cat_summary.sort_values("avg_reach", ascending=False),
+                          x="category", y="avg_reach",
+                          labels={"category": "Κατηγορία", "avg_reach": "Μέση απήχηση/post"})
+    st.plotly_chart(fig_cat_avg, width='stretch')
+
+st.markdown("---")
+
+# ------------------------------------------------- INSTAGRAM STORIES ----
+st.subheader("📱 Instagram Stories — ειδικές μετρικές")
 stories = owned[owned["format"] == "Story"]
 if len(stories):
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Σύνολο Link Clicks", int(stories["link_clicks"].sum()))
-    c2.metric("Σύνολο Profile Visits", int(stories["profile_visits"].sum()))
-    c3.metric("Σύνολο Replies", int(stories["replies"].sum()))
-    c4.metric("Σύνολο Sticker Taps", int(stories["sticker_taps"].sum()))
+    scol1, scol2, scol3, scol4, scol5 = st.columns(5)
+    scol1.metric("Απαντήσεις (replies)", f"{int(stories['story_replies'].sum()):,}")
+    scol2.metric("Κλικ σε σύνδεσμο", f"{int(stories['story_link_clicks'].sum()):,}")
+    scol3.metric("Επισκέψεις προφίλ", f"{int(stories['story_profile_visits'].sum()):,}")
+    scol4.metric("Πατήματα sticker", f"{int(stories['story_sticker_taps'].sum()):,}")
+    scol5.metric("Νέοι followers", f"{int(stories['story_new_follows'].sum()):,}")
 
-    story_timeline = stories.groupby("date")[["link_clicks", "profile_visits"]].sum().reset_index()
-    fig_story = px.line(story_timeline, x="date", y=["link_clicks", "profile_visits"],
-                        labels={"value": "Αριθμός", "variable": "Μετρική"})
-    st.plotly_chart(fig_story, use_container_width=True)
-
-    top_stories = stories.nlargest(5, "link_clicks")[["dt", "text", "link_clicks", "profile_visits"]]
-    top_stories["text"] = top_stories["text"].str.slice(0, 80) + "…"
-    top_stories["dt"] = top_stories["dt"].dt.strftime("%d/%m %H:%M")
-    st.dataframe(top_stories, use_container_width=True, hide_index=True)
+    st.caption(
+        "Η «Πλοήγηση» (forward/back taps) δείχνει πόσο κρατάει την προσοχή ένα story: "
+        f"μέσος όρος {stories['story_navigation'].mean():.0f} ανά story."
+    )
+    story_top = stories.nlargest(5, "story_link_clicks")[
+        ["dt", "text", "reach", "story_link_clicks", "story_profile_visits", "link"]
+    ].copy()
+    if story_top["story_link_clicks"].sum() > 0:
+        story_top["dt"] = story_top["dt"].dt.strftime("%d/%m/%Y %H:%M")
+        story_top["text"] = story_top["text"].str.slice(0, 60) + "…"
+        st.markdown("**Stories με τα περισσότερα κλικ σε σύνδεσμο:**")
+        st.dataframe(story_top, width='stretch', hide_index=True)
 else:
-    st.info("Δεν υπάρχουν δικές μας Instagram Stories στο επιλεγμένο εύρος.")
+    st.info("Δεν υπάρχουν Instagram Stories στο επιλεγμένο εύρος/φίλτρα.")
 
-# ---------------------------------------------------------- WORD CLOUD ---
 st.markdown("---")
-st.subheader("☁️ Word Cloud από τα κείμενα των δικών μας δημοσιεύσεων")
-if len(owned) > 0:
-    all_text = " ".join(owned["text"].dropna().astype(str))
-    wordcloud = WordCloud(width=800, height=400, background_color="white",
-                          max_words=100, colormap="Oranges",
-                          stopwords={"της", "και", "στο", "για", "να", "με", "από", "την", "τους", "που", "θα", "στο", "στην"}).generate(all_text)
 
-    fig_wc, ax = plt.subplots(figsize=(10, 5))
-    ax.imshow(wordcloud, interpolation="bilinear")
-    ax.axis("off")
-    st.pyplot(fig_wc)
-else:
-    st.info("Δεν υπάρχουν κείμενα για ανάλυση.")
-
-# --------------------------------------------------- SPEAKER ANALYSIS ---
-st.markdown("---")
-st.subheader("🎤 Ανάλυση Ομιλητών / Συγγραφέων (μόνο δικές μας)")
-speaker_list = []
-for _, row in owned.iterrows():
-    for sp in row["speakers"]:
-        speaker_list.append({
-            "speaker": sp,
-            "reach": row["reach"],
-            "engagement": row["engagement"],
-            "posts": 1
-        })
-if speaker_list:
-    sp_df = pd.DataFrame(speaker_list)
-    sp_agg = sp_df.groupby("speaker").agg(
-        total_reach=("reach", "sum"),
-        total_engagement=("engagement", "sum"),
-        mentions=("posts", "count")
-    ).reset_index().sort_values("total_reach", ascending=False)
-
-    top_speakers = sp_agg.head(10)
-    fig_sp = px.bar(top_speakers, x="speaker", y="total_reach",
-                    text="mentions", labels={"total_reach": "Συνολική απήχηση", "speaker": ""})
-    fig_sp.update_traces(texttemplate="%{text} posts", textposition="outside")
-    st.plotly_chart(fig_sp, use_container_width=True)
-
-    st.dataframe(top_speakers, use_container_width=True, hide_index=True)
-else:
-    st.info("Δεν εντοπίστηκαν ονόματα ομιλητών στα κείμενα.")
-
-# ----------------------------------------------- CONTENT CATEGORIES ---
-st.markdown("---")
-st.subheader("📂 Απόδοση ανά κατηγορία περιεχομένου (δικές μας)")
-cat_agg = owned.groupby("content_category").agg(
-    posts=("id", "count"),
-    total_reach=("reach", "sum"),
-    avg_reach=("reach", "mean"),
-    engagement=("engagement", "sum")
-).reset_index().sort_values("total_reach", ascending=False)
-
-fig_cat = px.bar(cat_agg, x="content_category", y="total_reach",
-                 text="posts", labels={"total_reach": "Συνολική απήχηση", "content_category": "Κατηγορία"})
-fig_cat.update_traces(texttemplate="%{text} posts", textposition="outside")
-st.plotly_chart(fig_cat, use_container_width=True)
-
-# ----------------------------------------------------- NEGATIVE FEEDBACK ---
-st.markdown("---")
-st.subheader("👎 Αρνητικά σχόλια (Facebook: αποκρύψεις)")
+# --------------------------------------------------- NEGATIVE FEEDBACK --
+st.subheader("👎 Αρνητικά σχόλια χρηστών (Facebook)")
 fb_owned = owned[owned["channel"] == "Facebook"]
-if len(fb_owned) > 0 and fb_owned["hides"].sum() > 0:
-    hide_agg = fb_owned.groupby("phase")["hides"].sum().reset_index()
-    fig_hide = px.bar(hide_agg, x="phase", y="hides", labels={"hides": "Σύνολο αποκρύψεων", "phase": "Φάση"})
-    st.plotly_chart(fig_hide, use_container_width=True)
-    st.caption("Οι αποκρύψεις είναι ένδειξη ότι το περιεχόμενο δεν αρέσει σε κάποιους χρήστες.")
+if len(fb_owned) and ("fb_hide_all" in fb_owned.columns):
+    hide_all_n = int(fb_owned["fb_hide_all"].fillna(0).sum())
+    hide_n = int(fb_owned["fb_hide"].fillna(0).sum())
+    ncol1, ncol2 = st.columns(2)
+    ncol1.metric("«Απόκρυψη όλων» (hide all future posts)", hide_all_n)
+    ncol2.metric("«Απόκρυψη» (hide this post)", hide_n)
+    affected = fb_owned[(fb_owned["fb_hide_all"].fillna(0) > 0) | (fb_owned["fb_hide"].fillna(0) > 0)]
+    if len(affected):
+        aff_display = affected[["dt", "text", "reach", "fb_hide_all", "fb_hide", "link"]].copy()
+        aff_display["dt"] = aff_display["dt"].dt.strftime("%d/%m/%Y %H:%M")
+        aff_display["text"] = aff_display["text"].str.slice(0, 70) + "…"
+        st.markdown("**Δημοσιεύσεις με καταγεγραμμένο αρνητικό feedback:**")
+        st.dataframe(aff_display, width='stretch', hide_index=True)
+    st.caption(
+        "Οι αριθμοί είναι πολύ μικροί σε απόλυτους όρους σε σχέση με το σύνολο των δημοσιεύσεων — "
+        "δεν φαίνεται συστηματικό πρόβλημα, αλλά αξίζει να ελέγχονται οι συγκεκριμένες δημοσιεύσεις."
+    )
 else:
-    st.info("Δεν υπάρχουν αρνητικά σχόλια (αποκρύψεις) στα επιλεγμένα δεδομένα.")
+    st.info("Δεν υπάρχουν δεδομένα αρνητικού feedback στο επιλεγμένο εύρος/φίλτρα.")
 
-# --------------------------------------------------------- STRATEGY ----
 st.markdown("---")
+
+# --------------------------------------------------------- STRATEGY -----
 st.subheader("💡 Αυτόματα strategic insights")
 
 insights = []
