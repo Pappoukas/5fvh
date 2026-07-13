@@ -19,6 +19,11 @@ from utils.text_analysis import word_frequencies, build_names_table, add_categor
 
 GREEK_FONT_PATH = os.path.join(matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans.ttf")
 
+# Toggle: η ενότητα "Αυτόματα strategic insights" είναι έτοιμη στον κώδικα
+# αλλά κρατιέται κρυφή προς το παρόν. Άλλαξέ το σε True όποτε θέλεις να
+# ξαναεμφανιστεί.
+SHOW_STRATEGIC_INSIGHTS = False
+
 st.set_page_config(
     page_title="Chania Book Festival — Social Analytics",
     page_icon="📖",
@@ -325,53 +330,114 @@ else:
 
 st.markdown("---")
 
-# --------------------------------------------------------- STRATEGY -----
-st.subheader("💡 Αυτόματα strategic insights")
-
-insights = []
-
-best_fmt = fmt.iloc[0]["format"] if len(fmt) else None
-if best_fmt:
-    insights.append(
-        f"Ο τύπος περιεχομένου **{best_fmt}** έχει τη μεγαλύτερη μέση απήχηση/δημοσίευση — "
-        "αξίζει μεγαλύτερη προτεραιότητα στο content plan."
-    )
-
-best_day_row = heat.groupby("weekday_gr")["reach"].mean().idxmax()
-insights.append(
-    f"Η ημέρα με τη μεγαλύτερη μέση απήχηση είναι **{best_day_row}** — "
-    "καλό timing για τις πιο σημαντικές ανακοινώσεις."
-)
-
-pre_sum = phase_summary.loc["Πριν το Φεστιβάλ", "sum"]
-during_sum = phase_summary.loc["Κατά το Φεστιβάλ", "sum"]
-post_sum = phase_summary.loc["Μετά το Φεστιβάλ", "sum"]
-if pre_sum and during_sum:
-    ratio = during_sum / pre_sum
-    insights.append(
-        f"Η απήχηση κατά τη διάρκεια του φεστιβάλ ήταν **{ratio:.1f}×** μεγαλύτερη σε σχέση με "
-        "την περίοδο πριν — η ένταση δημοσιεύσεων τις ημέρες του event αποδίδει, αλλά "
-        f"σημαίνει επίσης ότι η pre-event περίοδος (~{pre_sum:,.0f} reach σε σύνολο) χρειάζεται "
-        "πιο στοχευμένο, όχι απλώς πιο συχνό, περιεχόμενο."
-    )
-if post_sum and during_sum:
-    drop = 1 - (post_sum / during_sum)
-    insights.append(
-        f"Μετά τη λήξη του φεστιβάλ η απήχηση μειώθηκε κατά **{drop:.0%}** — "
-        "recap/highlight περιεχόμενο τις πρώτες 5-7 ημέρες μετά μπορεί να επιμηκύνει τη ζωή της καμπάνιας."
-    )
-
-if len(earned):
-    top_partner = em.iloc[0]["account"]
-    insights.append(
-        f"Ο λογαριασμός **{top_partner}** μας ανέφερε τις περισσότερες φορές — "
-        "καλός υποψήφιος για πιο συστηματική συνεργασία / cross-posting στο επόμενο φεστιβάλ."
-    )
-
-for i in insights:
-    st.markdown(f"- {i}")
-
+# ------------------------------------------------------ POSTING DATES ---
+st.subheader("🗓️ Πότε έγιναν οι αναρτήσεις")
 st.caption(
-    "Τα insights αυτά παράγονται αυτόματα από τα φιλτραρισμένα δεδομένα. "
-    "Χρησιμοποιήστε τα φίλτρα στο πλάι για να εστιάσετε ανά κανάλι / περίοδο / πηγή."
+    "Πλήρες χρονολόγιο των αναρτήσεων: πόσες έγιναν ανά μήνα/εβδομάδα, "
+    "ημερολογιακή πυκνότητα, και αναλυτική λίστα με ημερομηνία/ώρα κάθε δημοσίευσης."
 )
+
+pcol1, pcol2 = st.columns(2)
+with pcol1:
+    st.markdown("**Αναρτήσεις ανά μήνα**")
+    monthly_counts = (
+        owned.groupby(owned["dt"].dt.to_period("M"))["id"].count().reset_index()
+    )
+    monthly_counts["dt"] = monthly_counts["dt"].astype(str)
+    monthly_counts.columns = ["Μήνας", "Αναρτήσεις"]
+    fig_month = px.bar(monthly_counts, x="Μήνας", y="Αναρτήσεις")
+    st.plotly_chart(fig_month, width='stretch')
+
+with pcol2:
+    st.markdown("**Αναρτήσεις ανά κανάλι/τύπο & εβδομάδα**")
+    weekly_counts = (
+        owned.groupby([pd.Grouper(key="dt", freq="W"), "channel"])["id"]
+        .count()
+        .reset_index()
+        .rename(columns={"dt": "Εβδομάδα", "id": "Αναρτήσεις", "channel": "Κανάλι"})
+    )
+    fig_week_count = px.bar(
+        weekly_counts, x="Εβδομάδα", y="Αναρτήσεις", color="Κανάλι", barmode="stack"
+    )
+    fig_week_count.add_vrect(
+        x0=FESTIVAL_START, x1=FESTIVAL_END,
+        fillcolor="orange", opacity=0.12, line_width=0,
+    )
+    st.plotly_chart(fig_week_count, width='stretch')
+
+st.markdown("**Ημερολογιακή πυκνότητα αναρτήσεων** (ημέρα × ώρα, αριθμός δημοσιεύσεων)")
+count_heat = owned.groupby(["weekday", "hour"])["id"].count().reset_index()
+count_heat["weekday"] = pd.Categorical(count_heat["weekday"], categories=weekday_order, ordered=True)
+count_heat["weekday_gr"] = count_heat["weekday"].map(gr_days)
+count_heat_pivot = count_heat.pivot(index="weekday_gr", columns="hour", values="id").reindex(
+    [gr_days[d] for d in weekday_order]
+)
+fig_count_heat = px.imshow(
+    count_heat_pivot, aspect="auto", color_continuous_scale="Blues",
+    labels=dict(x="Ώρα", y="Ημέρα", color="Αναρτήσεις"),
+)
+st.plotly_chart(fig_count_heat, width='stretch')
+
+with st.expander("📋 Αναλυτική λίστα όλων των αναρτήσεων (ημερομηνία/ώρα, κανάλι, τύπος)"):
+    schedule_table = owned[["dt", "channel", "format", "text", "reach", "link"]].copy()
+    schedule_table["dt"] = schedule_table["dt"].dt.strftime("%d/%m/%Y %H:%M")
+    schedule_table["text"] = schedule_table["text"].str.slice(0, 60) + "…"
+    schedule_table = schedule_table.sort_values("dt", ascending=False)
+    schedule_table.columns = ["Ημερομηνία/Ώρα", "Κανάλι", "Τύπος", "Κείμενο", "Απήχηση", "Σύνδεσμος"]
+    st.dataframe(schedule_table, width='stretch', hide_index=True)
+
+st.markdown("---")
+
+# --------------------------------------------------------- STRATEGY -----
+# Η ενότητα κρατιέται στον κώδικα αλλά είναι κρυφή προς το παρόν
+# (SHOW_STRATEGIC_INSIGHTS = False στην κορυφή του αρχείου).
+if SHOW_STRATEGIC_INSIGHTS:
+    st.subheader("💡 Αυτόματα strategic insights")
+
+    insights = []
+
+    best_fmt = fmt.iloc[0]["format"] if len(fmt) else None
+    if best_fmt:
+        insights.append(
+            f"Ο τύπος περιεχομένου **{best_fmt}** έχει τη μεγαλύτερη μέση απήχηση/δημοσίευση — "
+            "αξίζει μεγαλύτερη προτεραιότητα στο content plan."
+        )
+
+    best_day_row = heat.groupby("weekday_gr")["reach"].mean().idxmax()
+    insights.append(
+        f"Η ημέρα με τη μεγαλύτερη μέση απήχηση είναι **{best_day_row}** — "
+        "καλό timing για τις πιο σημαντικές ανακοινώσεις."
+    )
+
+    pre_sum = phase_summary.loc["Πριν το Φεστιβάλ", "sum"]
+    during_sum = phase_summary.loc["Κατά το Φεστιβάλ", "sum"]
+    post_sum = phase_summary.loc["Μετά το Φεστιβάλ", "sum"]
+    if pre_sum and during_sum:
+        ratio = during_sum / pre_sum
+        insights.append(
+            f"Η απήχηση κατά τη διάρκεια του φεστιβάλ ήταν **{ratio:.1f}×** μεγαλύτερη σε σχέση με "
+            "την περίοδο πριν — η ένταση δημοσιεύσεων τις ημέρες του event αποδίδει, αλλά "
+            f"σημαίνει επίσης ότι η pre-event περίοδος (~{pre_sum:,.0f} reach σε σύνολο) χρειάζεται "
+            "πιο στοχευμένο, όχι απλώς πιο συχνό, περιεχόμενο."
+        )
+    if post_sum and during_sum:
+        drop = 1 - (post_sum / during_sum)
+        insights.append(
+            f"Μετά τη λήξη του φεστιβάλ η απήχηση μειώθηκε κατά **{drop:.0%}** — "
+            "recap/highlight περιεχόμενο τις πρώτες 5-7 ημέρες μετά μπορεί να επιμηκύνει τη ζωή της καμπάνιας."
+        )
+
+    if len(earned):
+        top_partner = em.iloc[0]["account"]
+        insights.append(
+            f"Ο λογαριασμός **{top_partner}** μας ανέφερε τις περισσότερες φορές — "
+            "καλός υποψήφιος για πιο συστηματική συνεργασία / cross-posting στο επόμενο φεστιβάλ."
+        )
+
+    for i in insights:
+        st.markdown(f"- {i}")
+
+    st.caption(
+        "Τα insights αυτά παράγονται αυτόματα από τα φιλτραρισμένα δεδομένα. "
+        "Χρησιμοποιήστε τα φίλτρα στο πλάι για να εστιάσετε ανά κανάλι / περίοδο / πηγή."
+    )
