@@ -164,11 +164,14 @@ def load_all(years=None) -> pd.DataFrame:
     frames = [f for f in frames if len(f)]
     df = pd.concat(frames, ignore_index=True, sort=False)
     df = df.dropna(subset=["dt"])
-    for col in ["views", "reach", "likes", "shares", "comments", "duration_sec"]:
+    for col in ["views", "reach", "likes", "shares", "comments", "duration_sec", "saves"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    for col in ["views", "reach", "likes", "shares", "comments"]:
-        df[col] = df[col].fillna(0)
+    for col in ["views", "reach", "likes", "shares", "comments", "saves"]:
+        if col in df.columns:
+            df[col] = df[col].fillna(0)
+        else:
+            df[col] = 0
     df["engagement"] = df["likes"] + df["shares"] + df["comments"]
     df["engagement_rate"] = np.where(df["reach"] > 0, df["engagement"] / df["reach"], np.nan)
     df["phase"] = df.apply(_phase, axis=1)
