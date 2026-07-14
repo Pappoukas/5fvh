@@ -103,16 +103,10 @@ if len(owned) == 0:
     st.warning("Δεν υπάρχουν δεδομένα για τα επιλεγμένα φίλτρα. Δοκίμασε να επιλέξεις τουλάχιστον μία διοργάνωση/κανάλι.")
     st.stop()
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 c1.metric("Δημοσιεύσεις (δικές μας)", f"{len(owned):,}")
 c2.metric("Συνολικές προβολές (views)", f"{int(owned['views'].sum()):,}")
 c3.metric("Αλληλεπιδράσεις", f"{int(owned['engagement'].sum()):,}")
-avg_er = owned.loc[owned["reach"] > 0, "engagement_rate"].mean()
-c4.metric("Μέσο engagement rate", f"{avg_er:.1%}" if pd.notna(avg_er) else "—")
-st.caption(
-    "Το engagement rate υπολογίζεται ως αλληλεπιδράσεις/απήχηση ανά μεμονωμένη δημοσίευση και μετά "
-    "παίρνεται ο μέσος όρος — αυτό είναι έγκυρο (δεν αθροίζει reach), σε αντίθεση με ένα «σύνολο απήχησης»."
-)
 
 st.markdown("---")
 
@@ -413,16 +407,11 @@ if len(videos) == 0:
     st.info("Δεν υπάρχουν δημοσιεύσεις τύπου Video/Reel/Story στο επιλεγμένο εύρος.")
 else:
     # -------------------------------------------------------- KPIs -----
-    vk1, vk2, vk3, vk4 = st.columns(4)
+    vk1, vk2, vk3 = st.columns(3)
     vk1.metric("Σύνολο βίντεο", f"{len(videos):,}")
     vk2.metric("Συνολικές προβολές", f"{int(videos['views'].sum()):,}")
     valid_dur = videos.loc[videos["duration_sec"].notna() & (videos["duration_sec"] > 0), "duration_sec"]
     vk3.metric("Μέση διάρκεια", f"{valid_dur.mean():.0f}s" if len(valid_dur) else "—")
-    vk4.metric(
-        "Μέσος χρόνος παρακολούθησης", "Μη διαθέσιμο",
-        help="Το Meta export δεν περιλαμβάνει μετρική watch-time/average view duration ανά δημοσίευση — "
-             "μόνο 'προβολές' και 'προβολές 3+ δευτ.' σε επίπεδο σελίδας, όχι ανά post.",
-    )
 
     vk5, vk6, vk7 = st.columns(3)
     avg_er_v = videos.loc[videos["reach"] > 0, "engagement_rate"].mean()
@@ -564,6 +553,65 @@ else:
         )
     else:
         st.info("Δεν υπάρχουν αρκετές μεταβλητές με μεταβλητότητα για correlation matrix στο επιλεγμένο εύρος.")
+
+st.markdown("---")
+
+# --------------------------------------- PHOTO vs REEL vs CAROUSEL ------
+st.subheader("📸 Σύγκριση Photo vs Reel vs Carousel")
+st.caption(
+    "Σύγκριση των τριών βασικών «στατικών»/feed τύπων περιεχομένου (Photo από Facebook, "
+    "Carousel από Instagram Feed, Reel από Facebook & Instagram μαζί)."
+)
+STATIC_FORMATS = {"Photo", "Reel", "Carousel"}
+static_content = owned[owned["format"].isin(STATIC_FORMATS)].copy()
+
+if len(static_content) == 0:
+    st.info("Δεν υπάρχουν δημοσιεύσεις τύπου Photo/Reel/Carousel στο επιλεγμένο εύρος.")
+else:
+    pvc = static_content.groupby("format").agg(
+        posts=("id", "count"),
+        avg_views=("views", "mean"),
+        avg_engagement_rate=("engagement_rate", "mean"),
+        avg_shares=("shares", "mean"),
+        avg_saves=("saves", "mean"),
+        avg_comments=("comments", "mean"),
+    ).reset_index()
+
+    pcol1, pcol2, pcol3 = st.columns(3)
+    with pcol1:
+        fig_p1 = px.bar(pvc, x="format", y="avg_views", text="posts",
+                         labels={"format": "", "avg_views": "Μέσες προβολές"}, title="Views")
+        fig_p1.update_traces(texttemplate="n=%{text}", textposition="outside")
+        st.plotly_chart(fig_p1, width='stretch')
+    with pcol2:
+        fig_p2 = px.bar(pvc, x="format", y="avg_engagement_rate",
+                         labels={"format": "", "avg_engagement_rate": "Μέσο engagement rate"}, title="Engagement rate")
+        fig_p2.update_yaxes(tickformat=".1%")
+        st.plotly_chart(fig_p2, width='stretch')
+    with pcol3:
+        fig_p3 = px.bar(pvc, x="format", y="avg_comments",
+                         labels={"format": "", "avg_comments": "Μέσα σχόλια"}, title="Comments")
+        st.plotly_chart(fig_p3, width='stretch')
+
+    pcol4, pcol5 = st.columns(2)
+    with pcol4:
+        fig_p4 = px.bar(pvc, x="format", y="avg_shares",
+                         labels={"format": "", "avg_shares": "Μέσες κοινοποιήσεις"}, title="Shares")
+        st.plotly_chart(fig_p4, width='stretch')
+    with pcol5:
+        fig_p5 = px.bar(pvc, x="format", y="avg_saves",
+                         labels={"format": "", "avg_saves": "Μέσες αποθηκεύσεις"}, title="Saves")
+        st.plotly_chart(fig_p5, width='stretch')
+    st.caption("Οι αποθηκεύσεις εμφανίζονται μόνο για Instagram Feed (Carousel) — το Facebook Photo/Reel δεν έχει αυτή τη μετρική.")
+
+    pvc_display = pvc.copy()
+    pvc_display["avg_views"] = pvc_display["avg_views"].round(0).astype(int)
+    pvc_display["avg_engagement_rate"] = (pvc_display["avg_engagement_rate"] * 100).round(2).astype(str) + "%"
+    pvc_display["avg_shares"] = pvc_display["avg_shares"].round(1)
+    pvc_display["avg_saves"] = pvc_display["avg_saves"].round(1)
+    pvc_display["avg_comments"] = pvc_display["avg_comments"].round(1)
+    pvc_display.columns = ["Τύπος", "Δημοσιεύσεις", "Μέσες προβολές", "Μέσο engagement rate", "Μέσες κοινοποιήσεις", "Μέσες αποθηκεύσεις", "Μέσα σχόλια"]
+    st.dataframe(pvc_display, width='stretch', hide_index=True)
 
 st.markdown("---")
 
