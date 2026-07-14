@@ -41,7 +41,7 @@ posts), όπου είναι έγκυρη ακριβώς επειδή αφορά 
 - Κατηγοριοποίηση περιεχομένου βάσει λέξεων-κλειδιών
 - Instagram Stories metrics: κλικ σε σύνδεσμο, επισκέψεις προφίλ, sticker taps, νέοι followers
 - Αρνητικό feedback (Facebook): δημοσιεύσεις με "απόκρυψη"/"απόκρυψη όλων"
-- **Διάρκεια βίντεο/story vs προβολές**
+- **🎥 Video Analytics** — ενιαία ενότητα για Reels/Videos/Stories: KPIs (σύνολο βίντεο, προβολές, μέση διάρκεια, engagement rate, κοινοποιήσεις, αποθηκεύσεις), Duration vs Views/Engagement/Shares/Saves, σύγκριση Reel vs Video vs Story, Top 10 Videos, correlation matrix
 - **Μήκος κειμένου vs engagement rate**
 - **Απόδοση hashtags** (εκτός του σταθερού branded hashtag)
 - **Ταχύτητα συσσώρευσης προβολών** (proxy μέσω ημερών από τη δημοσίευση)

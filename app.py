@@ -402,35 +402,168 @@ else:
 
 st.markdown("---")
 
-# ------------------------------------------------ DURATION VS VIEWS -----
-st.subheader("🎬 Διάρκεια βίντεο/story vs προβολές")
-dur = owned[owned["duration_sec"].notna() & (owned["duration_sec"] > 0)].copy()
-if len(dur) >= 5:
-    dur["duration_bucket"] = pd.cut(
-        dur["duration_sec"],
-        bins=[0, 5, 15, 30, 60, 120, 1e9],
-        labels=["≤5s", "6-15s", "16-30s", "31-60s", "61-120s", ">120s"],
-    )
-    dcol1, dcol2 = st.columns(2)
-    with dcol1:
-        fig_dur_scatter = px.scatter(
-            dur, x="duration_sec", y="views", color="format",
-            labels={"duration_sec": "Διάρκεια (δευτ.)", "views": "Προβολές", "format": "Τύπος"},
-            hover_data=["text"],
-        )
-        st.plotly_chart(fig_dur_scatter, width='stretch')
-    with dcol2:
-        dur_bucket_summary = dur.groupby("duration_bucket", observed=True).agg(
-            posts=("id", "count"), avg_views=("views", "mean")
-        ).reset_index()
-        fig_dur_bucket = px.bar(dur_bucket_summary, x="duration_bucket", y="avg_views", text="posts",
-                                 labels={"duration_bucket": "Διάρκεια", "avg_views": "Μέσες προβολές"})
-        fig_dur_bucket.update_traces(texttemplate="n=%{text}", textposition="outside")
-        st.plotly_chart(fig_dur_bucket, width='stretch')
-    corr = dur["duration_sec"].corr(dur["views"])
-    st.caption(f"Συσχέτιση διάρκειας–προβολών: r ≈ {corr:.2f} (κοντά στο 0 = ασθενής σχέση).")
+# ------------------------------------------------- VIDEO ANALYTICS ------
+st.subheader("🎥 Video Analytics")
+st.caption("Αξιολόγηση της απόδοσης Reels, Videos και Stories.")
+
+VIDEO_FORMATS = {"Video", "Reel", "Story"}
+videos = owned[owned["format"].isin(VIDEO_FORMATS)].copy()
+
+if len(videos) == 0:
+    st.info("Δεν υπάρχουν δημοσιεύσεις τύπου Video/Reel/Story στο επιλεγμένο εύρος.")
 else:
-    st.info("Δεν υπάρχουν αρκετές δημοσιεύσεις με καταγεγραμμένη διάρκεια στο επιλεγμένο εύρος.")
+    # -------------------------------------------------------- KPIs -----
+    vk1, vk2, vk3, vk4 = st.columns(4)
+    vk1.metric("Σύνολο βίντεο", f"{len(videos):,}")
+    vk2.metric("Συνολικές προβολές", f"{int(videos['views'].sum()):,}")
+    valid_dur = videos.loc[videos["duration_sec"].notna() & (videos["duration_sec"] > 0), "duration_sec"]
+    vk3.metric("Μέση διάρκεια", f"{valid_dur.mean():.0f}s" if len(valid_dur) else "—")
+    vk4.metric(
+        "Μέσος χρόνος παρακολούθησης", "Μη διαθέσιμο",
+        help="Το Meta export δεν περιλαμβάνει μετρική watch-time/average view duration ανά δημοσίευση — "
+             "μόνο 'προβολές' και 'προβολές 3+ δευτ.' σε επίπεδο σελίδας, όχι ανά post.",
+    )
+
+    vk5, vk6, vk7 = st.columns(3)
+    avg_er_v = videos.loc[videos["reach"] > 0, "engagement_rate"].mean()
+    vk5.metric("Μέσο engagement rate", f"{avg_er_v:.1%}" if pd.notna(avg_er_v) else "—")
+    vk6.metric("Μέσες κοινοποιήσεις", f"{videos['shares'].mean():.1f}")
+    has_saves = videos["channel"].eq("Instagram Feed").any()
+    vk7.metric(
+        "Μέσες αποθηκεύσεις", f"{videos['saves'].mean():.1f}" if has_saves else "—",
+        help="Η μετρική 'Αποθηκεύσεις' υπάρχει μόνο για το Instagram Feed export — "
+             "το Facebook και τα Instagram Stories δεν τη διαθέτουν.",
+    )
+
+    st.markdown("---")
+
+    # ------------------------------------------- DURATION PERFORMANCE ---
+    st.markdown("#### ⏳ Απόδοση διάρκειας βίντεο")
+    dur = videos[videos["duration_sec"].notna() & (videos["duration_sec"] > 0)].copy()
+    if len(dur) >= 5:
+        dcol1, dcol2 = st.columns(2)
+        with dcol1:
+            fig_dv = px.scatter(
+                dur, x="duration_sec", y="views", color="format",
+                labels={"duration_sec": "Διάρκεια (δευτ.)", "views": "Προβολές", "format": "Τύπος"},
+                hover_data=["text"], title="Duration vs Views",
+            )
+            st.plotly_chart(fig_dv, width='stretch')
+            corr_dv = dur["duration_sec"].corr(dur["views"])
+            st.caption(f"r ≈ {corr_dv:.2f} — δείχνει αν τα μικρότερα ή μεγαλύτερα βίντεο αποδίδουν καλύτερα σε προβολές.")
+        with dcol2:
+            dur_er = dur[dur["engagement_rate"].notna()]
+            fig_de = px.scatter(
+                dur_er, x="duration_sec", y="engagement_rate", color="format",
+                labels={"duration_sec": "Διάρκεια (δευτ.)", "engagement_rate": "Engagement rate", "format": "Τύπος"},
+                hover_data=["text"], title="Duration vs Engagement Rate",
+            )
+            fig_de.update_yaxes(tickformat=".0%")
+            st.plotly_chart(fig_de, width='stretch')
+            corr_de = dur_er["duration_sec"].corr(dur_er["engagement_rate"]) if len(dur_er) >= 5 else float("nan")
+            st.caption(f"r ≈ {corr_de:.2f}" if pd.notna(corr_de) else "Ανεπαρκή δεδομένα.")
+
+        dcol3, dcol4 = st.columns(2)
+        with dcol3:
+            fig_ds = px.scatter(
+                dur, x="duration_sec", y="shares", color="format",
+                labels={"duration_sec": "Διάρκεια (δευτ.)", "shares": "Κοινοποιήσεις", "format": "Τύπος"},
+                hover_data=["text"], title="Duration vs Shares",
+            )
+            st.plotly_chart(fig_ds, width='stretch')
+            st.caption("Ποια βίντεο κοινοποιούνται περισσότερο.")
+        with dcol4:
+            dur_saves = dur[dur["channel"] == "Instagram Feed"]
+            if len(dur_saves) >= 5:
+                fig_dsv = px.scatter(
+                    dur_saves, x="duration_sec", y="saves", color="format",
+                    labels={"duration_sec": "Διάρκεια (δευτ.)", "saves": "Αποθηκεύσεις", "format": "Τύπος"},
+                    hover_data=["text"], title="Duration vs Saves",
+                )
+                st.plotly_chart(fig_dsv, width='stretch')
+                st.caption("Ιδιαίτερα χρήσιμο για εκπαιδευτικό/χρηστικό περιεχόμενο. Μόνο Instagram Feed (μόνη πηγή με δεδομένα αποθηκεύσεων).")
+            else:
+                st.info("Ανεπαρκή δεδομένα αποθηκεύσεων (μόνο Instagram Feed έχει αυτή τη μετρική).")
+    else:
+        st.info("Δεν υπάρχουν αρκετά βίντεο με καταγεγραμμένη διάρκεια στο επιλεγμένο εύρος.")
+
+    st.markdown("---")
+
+    # -------------------------------------------------- VIDEO TYPE -----
+    st.markdown("#### 🎞️ Σύγκριση τύπου βίντεο (Reel / Video / Story)")
+    vtype = videos.groupby("format").agg(
+        posts=("id", "count"),
+        avg_views=("views", "mean"),
+        avg_engagement_rate=("engagement_rate", "mean"),
+        avg_shares=("shares", "mean"),
+        avg_saves=("saves", "mean"),
+    ).reset_index()
+    tcol1, tcol2, tcol3, tcol4 = st.columns(4)
+    with tcol1:
+        fig_t1 = px.bar(vtype, x="format", y="avg_views", text="posts",
+                         labels={"format": "", "avg_views": "Μέσες προβολές"}, title="Views")
+        fig_t1.update_traces(texttemplate="n=%{text}", textposition="outside")
+        st.plotly_chart(fig_t1, width='stretch')
+    with tcol2:
+        fig_t2 = px.bar(vtype, x="format", y="avg_engagement_rate",
+                         labels={"format": "", "avg_engagement_rate": "Μέσο engagement rate"}, title="Engagement")
+        fig_t2.update_yaxes(tickformat=".1%")
+        st.plotly_chart(fig_t2, width='stretch')
+    with tcol3:
+        fig_t3 = px.bar(vtype, x="format", y="avg_shares",
+                         labels={"format": "", "avg_shares": "Μέσες κοινοποιήσεις"}, title="Shares")
+        st.plotly_chart(fig_t3, width='stretch')
+    with tcol4:
+        fig_t4 = px.bar(vtype, x="format", y="avg_saves",
+                         labels={"format": "", "avg_saves": "Μέσες αποθηκεύσεις"}, title="Saves")
+        st.plotly_chart(fig_t4, width='stretch')
+    st.caption("Οι αποθηκεύσεις εμφανίζονται μόνο για Instagram Feed Reels — Facebook Video και Instagram Stories δεν έχουν αυτή τη μετρική (θα δείχνουν 0).")
+
+    st.markdown("---")
+
+    # ------------------------------------------------- TOP 10 VIDEOS ---
+    st.markdown("#### 🏆 Top 10 Videos")
+    top_videos = videos.nlargest(10, "views")[
+        ["dt", "channel", "format", "text", "views", "engagement", "shares", "saves", "link"]
+    ].copy()
+    top_videos["text"] = top_videos["text"].str.slice(0, 70) + "…"
+    top_videos["dt"] = top_videos["dt"].dt.strftime("%d/%m/%Y %H:%M")
+    top_videos.columns = ["Ημερομηνία", "Κανάλι", "Τύπος", "Δημοσίευση", "Views", "Engagement", "Shares", "Saves", "Σύνδεσμος"]
+    st.dataframe(top_videos, width='stretch', hide_index=True)
+
+    st.markdown("---")
+
+    # --------------------------------------------- CORRELATION MATRIX ---
+    st.markdown("#### 🔢 Correlation Matrix")
+    st.caption("Συσχετίσεις μεταξύ διάρκειας, views, likes, comments, shares, saves και engagement rate.")
+    corr_cols_all = {
+        "duration_sec": "Διάρκεια", "views": "Views", "likes": "Likes",
+        "comments": "Comments", "shares": "Shares", "saves": "Saves",
+        "engagement_rate": "Engagement rate",
+    }
+    # Στήλες χωρίς καθόλου μεταβλητότητα (π.χ. "saves" όταν δεν υπάρχει Instagram Feed
+    # στο επιλεγμένο φίλτρο) βγάζουν NaN συσχέτιση σε όλη τη γραμμή/στήλη — τις αφαιρούμε.
+    usable_cols = [c for c in corr_cols_all if videos[c].nunique(dropna=True) > 1]
+    dropped_cols = [corr_cols_all[c] for c in corr_cols_all if c not in usable_cols]
+    if len(usable_cols) >= 2:
+        corr_matrix = videos[usable_cols].corr()
+        corr_labels = [corr_cols_all[c] for c in usable_cols]
+        fig_corr = px.imshow(
+            corr_matrix, x=corr_labels, y=corr_labels, color_continuous_scale="RdBu_r",
+            zmin=-1, zmax=1, text_auto=".2f", aspect="auto",
+        )
+        st.plotly_chart(fig_corr, width='stretch')
+        if dropped_cols:
+            st.caption(
+                f"⚠️ Εξαιρέθηκαν από τον πίνακα: {', '.join(dropped_cols)} — καμία μεταβλητότητα "
+                "στο επιλεγμένο φίλτρο (π.χ. οι αποθηκεύσεις υπάρχουν μόνο για Instagram Feed)."
+            )
+        st.caption(
+            "Οι αποθηκεύσεις έχουν δεδομένα μόνο από Instagram Feed — η συσχέτισή τους με τα υπόλοιπα "
+            "μπορεί να είναι λιγότερο αξιόπιστη λόγω μικρότερου δείγματος."
+        )
+    else:
+        st.info("Δεν υπάρχουν αρκετές μεταβλητές με μεταβλητότητα για correlation matrix στο επιλεγμένο εύρος.")
 
 st.markdown("---")
 
