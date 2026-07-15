@@ -96,17 +96,34 @@ st.caption(
 )
 
 # ----------------------------------------------------------------- KPIs ---
-owned = fdf[fdf["is_owned"]]
+# ΣΗΜΑΝΤΙΚΟ: "owned" εδώ σημαίνει "το working dataset μετά τα φίλτρα",
+# όχι κατ' ανάγκη μόνο is_owned==True — ήδη εφαρμόστηκε το φίλτρο
+# "Πηγή δημοσίευσης" πιο πάνω στο fdf. Αν ξαναφιλτράραμε εδώ σε
+# is_owned==True, η επιλογή "Όλες"/"Μόνο earned media" δεν θα είχε καμία
+# επίδραση στο υπόλοιπο dashboard (αυτό ήταν και το bug).
+owned = fdf
 earned = fdf[~fdf["is_owned"]]
 
 if len(owned) == 0:
     st.warning("Δεν υπάρχουν δεδομένα για τα επιλεγμένα φίλτρα. Δοκίμασε να επιλέξεις τουλάχιστον μία διοργάνωση/κανάλι.")
     st.stop()
 
+kpi_post_label = {
+    "Όλες": "Δημοσιεύσεις (δικές μας + earned)",
+    "Μόνο δικές μας": "Δημοσιεύσεις (δικές μας)",
+    "Μόνο earned media / αναφορές": "Δημοσιεύσεις (earned/αναφορές)",
+}[own_filter]
+
 c1, c2, c3 = st.columns(3)
-c1.metric("Δημοσιεύσεις (δικές μας)", f"{len(owned):,}")
+c1.metric(kpi_post_label, f"{len(owned):,}")
 c2.metric("Συνολικές προβολές (views)", f"{int(owned['views'].sum()):,}")
 c3.metric("Αλληλεπιδράσεις", f"{int(owned['engagement'].sum()):,}")
+if own_filter != "Μόνο δικές μας" and (~owned["is_owned"]).any():
+    st.caption(
+        "⚠️ Τα δεδομένα προβολών/αλληλεπιδράσεων για δημοσιεύσεις τρίτων (earned media) είναι "
+        "ασυνεπή/ελλιπή στο export του Meta (π.χ. το Instagram δίνει views αλλά όχι reach για tagged "
+        "posts τρίτων, το Facebook συχνά το αντίστροφο) — σύγκρινε με προσοχή."
+    )
 
 st.markdown("---")
 
@@ -260,14 +277,19 @@ st.markdown("---")
 # -------------------------------------------------------- EARNED MEDIA ---
 st.subheader("🤝 Earned media — ποιοι μας ανέφεραν")
 if len(earned):
-    em = earned.groupby("account").agg(mentions=("id", "count")).reset_index().sort_values(
-        "mentions", ascending=False
-    )
+    em = earned.groupby("account").agg(
+        mentions=("id", "count"), views=("views", "sum")
+    ).reset_index().sort_values("mentions", ascending=False)
     fig_em = px.bar(em, x="account", y="mentions", labels={"account": "Λογαριασμός", "mentions": "Αναφορές"})
     st.plotly_chart(fig_em, width='stretch')
+    st.dataframe(
+        em.rename(columns={"account": "Λογαριασμός", "mentions": "Αναφορές", "views": "Προβολές (όπου διαθέσιμες)"}),
+        width='stretch', hide_index=True,
+    )
     st.caption(
-        "Το Meta δεν παρέχει δεδομένα απήχησης/views/engagement για δημοσιεύσεις τρίτων λογαριασμών — "
-        "μετράμε μόνο τον αριθμό αναφορών/tags."
+        "Τα δεδομένα προβολών για δημοσιεύσεις τρίτων είναι ασυνεπή στο export του Meta — το Instagram "
+        "συχνά δίνει views αλλά όχι reach για tagged posts τρίτων, το Facebook συχνά το αντίστροφο. "
+        "Μεταχειρίσου τα ως ενδεικτικά, όχι πλήρη."
     )
 else:
     st.info("Δεν υπάρχουν καταγεγραμμένες αναφορές τρίτων στο επιλεγμένο εύρος.")
