@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import matplotlib
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
@@ -190,6 +191,122 @@ for c in ["total_views", "total_engagement"]:
     yoy_display[c] = yoy_display[c].astype(int)
 yoy_display.columns = ["Διοργάνωση", "Δημοσιεύσεις", "Σύνολο προβολών", "Αλληλεπιδράσεις", "Μέσο engagement rate"]
 st.dataframe(yoy_display, width='stretch', hide_index=True)
+
+st.markdown("---")
+
+# ------------------------------------ DETAILED 2-YEAR COMPARISON --------
+st.subheader("📆 Λεπτομερής Σύγκριση 2 Ετών (1 Φεβρουαρίου – 15 Ιουλίου)")
+st.caption(
+    "Επίλεξε δύο διοργανώσεις για σύγκριση προβολών και αριθμού αναρτήσεων, "
+    "ημέρα-με-ημέρα, ευθυγραμμισμένες στο ίδιο ημερολογιακό διάστημα (ανεξαρτήτως έτους). "
+    "Σέβεται τα φίλτρα καναλιού/πηγής του πλαϊνού μενού, όχι όμως το φίλτρο διοργάνωσης/ημερομηνιών."
+)
+
+available_years = sorted(df["year"].dropna().unique())
+year_labels = {y: EDITION_LABELS.get(y, str(y)) for y in available_years}
+
+cmp_col1, cmp_col2 = st.columns(2)
+with cmp_col1:
+    year_a = st.selectbox(
+        "Έτος Α", available_years,
+        index=max(0, len(available_years) - 2),
+        format_func=lambda y: year_labels[y], key="cmp_year_a",
+    )
+with cmp_col2:
+    year_b = st.selectbox(
+        "Έτος Β", available_years,
+        index=len(available_years) - 1,
+        format_func=lambda y: year_labels[y], key="cmp_year_b",
+    )
+
+COLOR_A, COLOR_B = "#1B4A5A", "#C9953A"
+
+cmp_base = df[df["channel"].isin(channels)]
+if own_filter == "Μόνο δικές μας":
+    cmp_base = cmp_base[cmp_base["is_owned"]]
+elif own_filter == "Μόνο earned media / αναφορές":
+    cmp_base = cmp_base[~cmp_base["is_owned"]]
+
+
+def _window_for_year(data, year):
+    start = pd.Timestamp(f"{int(year)}-02-01")
+    end = pd.Timestamp(f"{int(year)}-07-15 23:59:59")
+    sub = data[(data["year"] == year) & (data["dt"] >= start) & (data["dt"] <= end)].copy()
+    # Ευθυγράμμιση όλων των ετών σε κοινό ψευδο-έτος (2000, δίσεκτο) ώστε να
+    # μπορούν να μπουν στον ίδιο άξονα x ανεξαρτήτως πραγματικού έτους.
+    sub["display_date"] = pd.to_datetime("2000-" + sub["dt"].dt.strftime("%m-%d"), format="%Y-%m-%d", errors="coerce")
+    return sub
+
+
+sub_a = _window_for_year(cmp_base, year_a)
+sub_b = _window_for_year(cmp_base, year_b)
+
+if year_a == year_b:
+    st.warning("Επίλεξε δύο διαφορετικές διοργανώσεις για να δεις ουσιαστική σύγκριση.")
+elif len(sub_a) == 0 or len(sub_b) == 0:
+    st.info("Δεν υπάρχουν αρκετά δεδομένα για ένα από τα επιλεγμένα έτη στο διάστημα Φεβρουαρίου–15 Ιουλίου.")
+else:
+    daily_a = sub_a.groupby("display_date").agg(views=("views", "sum"), posts=("id", "count")).reset_index()
+    daily_b = sub_b.groupby("display_date").agg(views=("views", "sum"), posts=("id", "count")).reset_index()
+
+    fig_cmp = make_subplots(specs=[[{"secondary_y": True}]])
+    fig_cmp.add_trace(go.Scatter(
+        x=daily_a["display_date"], y=daily_a["views"], name=f"Views — {year_labels[year_a]}",
+        mode="lines", line=dict(color=COLOR_A, width=2),
+    ), secondary_y=False)
+    fig_cmp.add_trace(go.Scatter(
+        x=daily_b["display_date"], y=daily_b["views"], name=f"Views — {year_labels[year_b]}",
+        mode="lines", line=dict(color=COLOR_B, width=2),
+    ), secondary_y=False)
+    fig_cmp.add_trace(go.Bar(
+        x=daily_a["display_date"], y=daily_a["posts"], name=f"Αναρτήσεις — {year_labels[year_a]}",
+        marker=dict(color=COLOR_A, opacity=0.30),
+    ), secondary_y=True)
+    fig_cmp.add_trace(go.Bar(
+        x=daily_b["display_date"], y=daily_b["posts"], name=f"Αναρτήσεις — {year_labels[year_b]}",
+        marker=dict(color=COLOR_B, opacity=0.30),
+    ), secondary_y=True)
+    fig_cmp.update_xaxes(title_text="Ημέρα (Φεβ–15 Ιουλ, ευθυγραμμισμένη ανά έτος)", tickformat="%d %b")
+    fig_cmp.update_yaxes(title_text="Προβολές", secondary_y=False)
+    fig_cmp.update_yaxes(title_text="Αριθμός αναρτήσεων", secondary_y=True, showgrid=False)
+    fig_cmp.update_layout(
+        barmode="overlay", height=520,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(t=60),
+    )
+    st.plotly_chart(fig_cmp, width='stretch')
+    st.caption(
+        "Οι γραμμές (αριστερός άξονας) δείχνουν τις ημερήσιες προβολές. Οι ημιδιάφανες μπάρες "
+        "(δεξιός άξονας) δείχνουν πόσες αναρτήσεις έγιναν εκείνη την ημέρα, σε όλα τα επιλεγμένα κανάλια."
+    )
+
+    st.markdown("#### 📊 Βασικά Στατιστικά")
+    stat_rows = []
+    for sub, yr in [(sub_a, year_a), (sub_b, year_b)]:
+        daily_views = sub.groupby("display_date")["views"].sum()
+        peak_date = daily_views.idxmax() if len(daily_views) else None
+        top_channel = sub["channel"].value_counts().idxmax() if len(sub) else "—"
+        stat_rows.append({
+            "Διοργάνωση": year_labels[yr],
+            "Σύνολο προβολών": int(sub["views"].sum()),
+            "Σύνολο αναρτήσεων": len(sub),
+            "Μέσες προβολές/post": round(sub["views"].mean(), 1) if len(sub) else 0,
+            "Ημέρα αιχμής (views)": peak_date.strftime("%d %b") if peak_date is not None else "—",
+            "Κανάλι με τις περισσότερες αναρτήσεις": top_channel,
+        })
+    st.dataframe(pd.DataFrame(stat_rows), width='stretch', hide_index=True)
+
+    st.markdown("#### 📌 Αναρτήσεις ανά κανάλι και ημέρα")
+    ch_col1, ch_col2 = st.columns(2)
+    for col, sub, yr, color in [(ch_col1, sub_a, year_a, COLOR_A), (ch_col2, sub_b, year_b, COLOR_B)]:
+        with col:
+            daily_ch = sub.groupby(["display_date", "channel"]).size().reset_index(name="posts")
+            fig_ch_day = px.bar(
+                daily_ch, x="display_date", y="posts", color="channel", barmode="stack",
+                title=year_labels[yr], labels={"display_date": "", "posts": "Αναρτήσεις", "channel": "Κανάλι"},
+            )
+            fig_ch_day.update_xaxes(tickformat="%d %b")
+            st.plotly_chart(fig_ch_day, width='stretch')
 
 st.markdown("---")
 
