@@ -42,6 +42,7 @@ posts), όπου είναι έγκυρη ακριβώς επειδή αφορά 
 - Instagram Stories metrics: κλικ σε σύνδεσμο, επισκέψεις προφίλ, sticker taps, νέοι followers
 - Αρνητικό feedback (Facebook): δημοσιεύσεις με "απόκρυψη"/"απόκρυψη όλων"
 - **🎥 Video Analytics** — ενιαία ενότητα για Reels/Videos/Stories: KPIs (σύνολο βίντεο, προβολές, μέση διάρκεια, engagement rate, κοινοποιήσεις, αποθηκεύσεις), Duration vs Views/Engagement/Shares/Saves, σύγκριση Reel vs Video vs Story, Top 10 Videos, correlation matrix
+- **🔍 Απόδοση Ιστοσελίδας (Google Search)** — δεδομένα Google Search Console (chaniabookfestival.gr): κλικ/εμφανίσεις/CTR/θέση στον χρόνο, σύγκριση με προβολές social media ίδιας περιόδου, top αναζητήσεις/σελίδες, συσκευές, χώρες
 - **Μήκος κειμένου vs engagement rate**
 - **Απόδοση hashtags** (εκτός του σταθερού branded hashtag)
 - **Ταχύτητα συσσώρευσης προβολών** (proxy μέσω ημερών από τη δημοσίευση)
@@ -93,15 +94,18 @@ chania-book-festival-analytics/
 ├── app.py                  # Το Streamlit app
 ├── requirements.txt
 ├── utils/
-│   ├── data_loader.py       # Φόρτωση & ενοποίηση πολυετών exports σε κοινό schema
-│   └── text_analysis.py     # Word frequencies, ονόματα, κατηγορίες, hashtags
+│   ├── data_loader.py        # Φόρτωση & ενοποίηση πολυετών social exports σε κοινό schema
+│   ├── text_analysis.py      # Word frequencies, ονόματα, κατηγορίες, hashtags
+│   └── website_analytics.py  # Φόρτωση Google Search Console exports (.xlsx)
 └── data/
     ├── 2024/
     │   ├── facebook_posts.csv
     │   ├── instagram_feed.csv
     │   └── instagram_stories.csv
     ├── 2025/ (ίδια δομή)
-    └── 2026/ (ίδια δομή)
+    ├── 2026/ (ίδια δομή)
+    └── website/
+        └── search_console_2026.xlsx   # Google Search Console export ("Performance on Search")
 ```
 
 ## Ανανέωση δεδομένων
@@ -116,6 +120,23 @@ chania-book-festival-analytics/
 1. Δημιούργησε φάκελο `data/2027/` με τα 3 CSV.
 2. Πρόσθεσε το 2027 στη λίστα `YEARS` και τα σωστά `FESTIVAL_DATES` /
    `EDITION_LABELS` στο `utils/data_loader.py`.
+
+### Δεδομένα ιστοσελίδας (Google Search Console)
+
+Ρίξε οποιοδήποτε export "Performance on Search" (.xlsx) από το Google Search
+Console μέσα στο `data/website/` — το `website_analytics.py` τα διαβάζει όλα
+αυτόματα και τα ενοποιεί. Για να πάρεις νέο export: Google Search Console →
+chaniabookfestival.gr → Performance → επίλεξε εύρος ημερομηνιών → Export →
+Excel (.xlsx).
+
+⚠️ Αν προσθέσεις **δεύτερο** export με εύρος ημερομηνιών που επικαλύπτεται με
+ένα προηγούμενο (π.χ. δύο exports "τελευταίοι 3 μήνες" που παίρνονται σε
+διαφορετικές στιγμές), τα per-query/per-page/per-country/per-device σύνολα θα
+**διπλομετρηθούν** στην ενότητα "Κορυφαίες αναζητήσεις/σελίδες/συσκευές/χώρες"
+(αυτά τα sheets δεν έχουν ημερομηνία ανά γραμμή, οπότε δεν μπορούν να
+αποδιπλωθούν αυτόματα). Το ημερήσιο chart (πρώτο γράφημα) είναι ασφαλές σε
+επικαλύψεις, γιατί αποδιπλώνεται βάσει ημερομηνίας. Καλύτερη πρακτική: κράτα
+ένα export ανά μη-επικαλυπτόμενη περίοδο (π.χ. ένα ανά τρίμηνο).
 
 ## Σημείωση για την εξαγωγή ονομάτων
 
